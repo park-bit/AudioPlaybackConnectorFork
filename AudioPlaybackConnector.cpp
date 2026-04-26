@@ -18,8 +18,28 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	_In_ int       nCmdShow)
 {
 	UNREFERENCED_PARAMETER(hPrevInstance);
-	UNREFERENCED_PARAMETER(lpCmdLine);
 	UNREFERENCED_PARAMETER(nCmdShow);
+
+	// If relaunched as admin to apply the Absolute Volume fix, do it and exit
+	if (lpCmdLine && wcsstr(lpCmdLine, L"--fix-absolute-volume") != nullptr)
+	{
+		HKEY hKey;
+		LONG openResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT", 0, KEY_SET_VALUE, &hKey);
+		if (openResult != ERROR_SUCCESS)
+			openResult = RegCreateKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL);
+		if (openResult == ERROR_SUCCESS)
+		{
+			DWORD value = 1;
+			RegSetValueExW(hKey, L"DisableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&value, sizeof(value));
+			RegCloseKey(hKey);
+			TaskDialog(nullptr, nullptr, L"Success", L"Absolute Volume disabled.\n\nReboot your PC for the change to take effect.\nAfter rebooting, your phone volume buttons will only control phone volume.", nullptr, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, nullptr);
+		}
+		else
+		{
+			TaskDialog(nullptr, nullptr, L"Error", L"Failed to write registry key.", nullptr, TDCBF_OK_BUTTON, TD_ERROR_ICON, nullptr);
+		}
+		return 0;
+	}
 
 	g_hInst = hInstance;
 
@@ -531,10 +551,47 @@ void UpdateVolume()
 		winrt::com_ptr<IAudioSessionManager2> sessionManager;
 		winrt::check_hresult(defaultDevice->Activate(__uuidof(IAudioSessionManager2), CLSCTX_INPROC_SERVER, NULL, (void**)sessionManager.put()));
 
-		winrt::com_ptr<ISimpleAudioVolume> simpleVolume;
-		winrt::check_hresult(sessionManager->GetSimpleAudioVolume(NULL, 0, simpleVolume.put()));
+		winrt::com_ptr<IAudioSessionEnumerator> sessionEnumerator;
+		winrt::check_hresult(sessionManager->GetSessionEnumerator(sessionEnumerator.put()));
 
-		winrt::check_hresult(simpleVolume->SetMasterVolume(static_cast<float>(g_volume), NULL));
+		int sessionCount = 0;
+		winrt::check_hresult(sessionEnumerator->GetCount(&sessionCount));
+
+		const DWORD thisPid = GetCurrentProcessId();
+		bool applied = false;
+
+		for (int i = 0; i < sessionCount; ++i)
+		{
+			winrt::com_ptr<IAudioSessionControl> sessionControl;
+			if (FAILED(sessionEnumerator->GetSession(i, sessionControl.put())))
+				continue;
+
+			winrt::com_ptr<IAudioSessionControl2> sessionControl2;
+			if (FAILED(sessionControl->QueryInterface(__uuidof(IAudioSessionControl2), (void**)sessionControl2.put())))
+				continue;
+
+			DWORD pid = 0;
+			sessionControl2->GetProcessId(&pid);
+			if (pid != thisPid)
+				continue;
+
+			winrt::com_ptr<ISimpleAudioVolume> simpleVolume;
+			if (FAILED(sessionControl->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)simpleVolume.put())))
+				continue;
+
+			simpleVolume->SetMasterVolume(static_cast<float>(g_volume), NULL);
+			applied = true;
+		}
+
+		// Fallback: if no session found yet (app just started), apply to default session
+		if (!applied)
+		{
+			winrt::com_ptr<ISimpleAudioVolume> simpleVolume;
+			if (SUCCEEDED(sessionManager->GetSimpleAudioVolume(NULL, 0, simpleVolume.put())))
+			{
+				simpleVolume->SetMasterVolume(static_cast<float>(g_volume), NULL);
+			}
+		}
 	}
 	catch (...)
 	{
@@ -542,25 +599,61 @@ void UpdateVolume()
 	}
 }
 
+static bool IsRunningAsAdmin()
+{
+	BOOL isAdmin = FALSE;
+	HANDLE token = NULL;
+	if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+	{
+		TOKEN_ELEVATION elevation = {};
+		DWORD cbSize = sizeof(elevation);
+		if (GetTokenInformation(token, TokenElevation, &elevation, cbSize, &cbSize))
+			isAdmin = elevation.TokenIsElevated;
+		CloseHandle(token);
+	}
+	return isAdmin != FALSE;
+}
+
 void DisableAbsoluteVolume()
 {
+	// If not admin, relaunch with UAC elevation and a flag to apply the fix
+	if (!IsRunningAsAdmin())
+	{
+		wchar_t exePath[MAX_PATH];
+		GetModuleFileNameW(NULL, exePath, MAX_PATH);
+		HINSTANCE result = ShellExecuteW(g_hWnd, L"runas", exePath, L"--fix-absolute-volume", NULL, SW_SHOWNORMAL);
+		if (reinterpret_cast<INT_PTR>(result) <= 32)
+		{
+			TaskDialog(g_hWnd, NULL, _(L"Cancelled"), _(L"Administrator privileges are required to disable Absolute Volume.\nPlease try again and click Yes on the UAC prompt."), NULL, TDCBF_OK_BUTTON, TD_WARNING_ICON, NULL);
+		}
+		return;
+	}
+
+	// Check command line arg path: when relaunched as admin with --fix-absolute-volume
 	HKEY hKey;
-	if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS)
+	LONG openResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT", 0, KEY_SET_VALUE, &hKey);
+	if (openResult != ERROR_SUCCESS)
+	{
+		// Key may not exist yet, try creating it
+		openResult = RegCreateKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL);
+	}
+
+	if (openResult == ERROR_SUCCESS)
 	{
 		DWORD value = 1;
 		auto status = RegSetValueExW(hKey, L"DisableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&value, sizeof(value));
 		RegCloseKey(hKey);
 		if (status == ERROR_SUCCESS)
 		{
-			TaskDialog(g_hWnd, NULL, _(L"Success"), _(L"Absolute Volume has been disabled in the registry.\n\nYou MUST REBOOT your computer for this change to take effect.\nAfter rebooting, your phone volume buttons will only change the phone's volume, not your PC's system volume."), NULL, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
+			TaskDialog(g_hWnd, NULL, _(L"Success"), _(L"Absolute Volume has been disabled.\n\nYou MUST REBOOT your computer for this change to take effect.\nAfter rebooting, your phone volume buttons will only change the phone's volume, not your PC's master volume."), NULL, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
 		}
 		else
 		{
-			TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to set registry value. Please try running the app as Administrator."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
+			TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to write registry value."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
 		}
 	}
 	else
 	{
-		TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to open registry key.\n\nPlease make sure you are running the app as Administrator to apply this system fix."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
+		TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to open or create the Bluetooth registry key."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
 	}
 }
