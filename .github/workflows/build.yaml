@@ -9,10 +9,8 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Fix git protocol
-      run: git config --global url."https://github.com/".insteadOf git://github.com/
-    - name: Update submodules
-      run: git submodule update --init --recursive
+      with:
+        submodules: true
     - name: Add msbuild to PATH
       uses: microsoft/setup-msbuild@v2
     - uses: nuget/setup-nuget@v2
@@ -22,6 +20,7 @@ jobs:
       with:
         python-version: '3.10'
     - run: |
+        git config --global url."https://github.com/".insteadOf git://github.com/
         cd translate
         pip install -r requirements.txt
         ./gen_rc.sh
@@ -70,4 +69,5 @@ jobs:
       with:
         name: AudioPlaybackConnectorARM-pdb
         path: ARM/Release/AudioPlaybackConnectorARM.pdb
+
 
