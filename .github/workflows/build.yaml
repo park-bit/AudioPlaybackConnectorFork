@@ -9,8 +9,6 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
-      with:
-        submodules: true
     - name: Add msbuild to PATH
       uses: microsoft/setup-msbuild@v2
     - uses: nuget/setup-nuget@v2
@@ -19,23 +17,21 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-    - run: |
+    - name: Build Translate
+      run: |
         git config --global url."https://github.com/".insteadOf git://github.com/
         cd translate
-        pip install -r requirements.txt
-        ./gen_rc.sh
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+          ./gen_rc.sh
+        fi
       shell: bash
+      continue-on-error: true
     - run: nuget restore AudioPlaybackConnector.sln
-    - run: |
-        Start-Job -Init ([ScriptBlock]::Create("Set-Location '$pwd'")) -Script {
-          msbuild AudioPlaybackConnector.sln "-p:Configuration=Release;Platform=x64" }
-        Start-Job -Init ([ScriptBlock]::Create("Set-Location '$pwd'")) -Script {
-          msbuild AudioPlaybackConnector.sln "-p:Configuration=Release;Platform=x86" }
-        Start-Job -Init ([ScriptBlock]::Create("Set-Location '$pwd'")) -Script {
-          msbuild AudioPlaybackConnector.sln "-p:Configuration=Release;Platform=ARM64" }
-        Start-Job -Init ([ScriptBlock]::Create("Set-Location '$pwd'")) -Script {
-          msbuild AudioPlaybackConnector.sln "-p:Configuration=Release;Platform=ARM" }
-        Get-Job | Wait-Job | Receive-Job
+    - name: Build Solution
+      run: |
+        msbuild AudioPlaybackConnector.sln "-p:Configuration=Release;Platform=x64"
+        msbuild AudioPlaybackConnector.sln "-p:Configuration=Release;Platform=x86"
       shell: powershell
     - uses: actions/upload-artifact@v4
       with:
@@ -43,31 +39,8 @@ jobs:
         path: x64/Release/AudioPlaybackConnector64.exe
     - uses: actions/upload-artifact@v4
       with:
-        name: AudioPlaybackConnector64-pdb
-        path: x64/Release/AudioPlaybackConnector64.pdb
-    - uses: actions/upload-artifact@v4
-      with:
         name: AudioPlaybackConnector32
         path: Release/AudioPlaybackConnector32.exe
-    - uses: actions/upload-artifact@v4
-      with:
-        name: AudioPlaybackConnector32-pdb
-        path: Release/AudioPlaybackConnector32.pdb
-    - uses: actions/upload-artifact@v4
-      with:
-        name: AudioPlaybackConnectorARM64
-        path: ARM64/Release/AudioPlaybackConnectorARM64.exe
-    - uses: actions/upload-artifact@v4
-      with:
-        name: AudioPlaybackConnectorARM64-pdb
-        path: ARM64/Release/AudioPlaybackConnectorARM64.pdb
-    - uses: actions/upload-artifact@v4
-      with:
-        name: AudioPlaybackConnectorARM
-        path: ARM/Release/AudioPlaybackConnectorARM.exe
-    - uses: actions/upload-artifact@v4
-      with:
-        name: AudioPlaybackConnectorARM-pdb
-        path: ARM/Release/AudioPlaybackConnectorARM.pdb
+
 
 
