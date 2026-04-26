@@ -6,6 +6,7 @@ void SetupFlyout();
 void SetupVolumeFlyout();
 void SetupMenu();
 void UpdateVolume();
+void DisableAbsoluteVolume();
 winrt::fire_and_forget ConnectDevice(DevicePicker, std::wstring_view);
 void SetupDevicePicker();
 void SetupSvgIcon();
@@ -275,6 +276,12 @@ void SetupMenu()
 		winrt::Windows::System::Launcher::LaunchUriAsync(Uri(L"ms-settings:bluetooth"));
 	});
 
+	MenuFlyoutItem fixItem;
+	fixItem.Text(_(L"Decouple Phone Volume (Fix Sync)"));
+	fixItem.Click([](const auto&, const auto&) {
+		DisableAbsoluteVolume();
+	});
+
 	FontIcon volumeIcon;
 	volumeIcon.Glyph(L"\xE767");
 
@@ -331,6 +338,7 @@ void SetupMenu()
 
 	MenuFlyout menu;
 	menu.Items().Append(settingsItem);
+	menu.Items().Append(fixItem);
 	menu.Items().Append(volumeItem);
 	menu.Items().Append(exitItem);
 	menu.Opened([](const auto& sender, const auto&) {
@@ -531,5 +539,28 @@ void UpdateVolume()
 	catch (...)
 	{
 		LOG_CAUGHT_EXCEPTION();
+	}
+}
+
+void DisableAbsoluteVolume()
+{
+	HKEY hKey;
+	if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS)
+	{
+		DWORD value = 1;
+		auto status = RegSetValueExW(hKey, L"DisableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&value, sizeof(value));
+		RegCloseKey(hKey);
+		if (status == ERROR_SUCCESS)
+		{
+			TaskDialog(g_hWnd, NULL, _(L"Success"), _(L"Absolute Volume has been disabled in the registry.\n\nYou MUST REBOOT your computer for this change to take effect.\nAfter rebooting, your phone volume buttons will only change the phone's volume, not your PC's system volume."), NULL, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
+		}
+		else
+		{
+			TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to set registry value. Please try running the app as Administrator."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
+		}
+	}
+	else
+	{
+		TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to open registry key.\n\nPlease make sure you are running the app as Administrator to apply this system fix."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
 	}
 }
