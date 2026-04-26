@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: true
     - name: Add msbuild to PATH
@@ -16,9 +16,9 @@ jobs:
     - uses: nuget/setup-nuget@v1
       with:
         nuget-version: latest
-    - uses: actions/setup-python@v1
+    - uses: actions/setup-python@v5
       with:
-        python-version: 3.7
+        python-version: '3.10'
     - run: |
         cd translate
         pip install -r requirements.txt
@@ -36,37 +36,37 @@ jobs:
           msbuild AudioPlaybackConnector.sln "-p:Configuration=Release;Platform=ARM" }
         Get-Job | Wait-Job | Receive-Job
       shell: powershell
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
         name: AudioPlaybackConnector64
         path: x64/Release/AudioPlaybackConnector64.exe
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
-        name: AudioPlaybackConnector64
+        name: AudioPlaybackConnector64-pdb
         path: x64/Release/AudioPlaybackConnector64.pdb
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
         name: AudioPlaybackConnector32
         path: Release/AudioPlaybackConnector32.exe
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
-        name: AudioPlaybackConnector32
+        name: AudioPlaybackConnector32-pdb
         path: Release/AudioPlaybackConnector32.pdb
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
         name: AudioPlaybackConnectorARM64
         path: ARM64/Release/AudioPlaybackConnectorARM64.exe
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
-        name: AudioPlaybackConnectorARM64
+        name: AudioPlaybackConnectorARM64-pdb
         path: ARM64/Release/AudioPlaybackConnectorARM64.pdb
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
         name: AudioPlaybackConnectorARM
         path: ARM/Release/AudioPlaybackConnectorARM.exe
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
-        name: AudioPlaybackConnectorARM
+        name: AudioPlaybackConnectorARM-pdb
         path: ARM/Release/AudioPlaybackConnectorARM.pdb
     - name: Create Release
       id: create_release
