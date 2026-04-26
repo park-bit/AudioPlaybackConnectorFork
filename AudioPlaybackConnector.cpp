@@ -6,6 +6,8 @@ void SetupFlyout();
 void SetupVolumeFlyout();
 void SetupMenu();
 void UpdateVolume();
+void SetupEndpointVolume();
+void TeardownEndpointVolume();
 void DisableAbsoluteVolume();
 winrt::fire_and_forget ConnectDevice(DevicePicker, std::wstring_view);
 void SetupDevicePicker();
@@ -90,7 +92,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	desktopSource.Content(g_xamlCanvas);
 
 	LoadSettings();
-	UpdateVolume();
+	SetupEndpointVolume();
 	SetupFlyout();
 	SetupVolumeFlyout();
 	SetupMenu();
@@ -126,6 +128,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	switch (message)
 	{
 	case WM_DESTROY:
+		TeardownEndpointVolume();
 		for (const auto& connection : g_audioPlaybackConnections)
 		{
 			connection.second.second.Close();
@@ -212,6 +215,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			g_lastDevices.clear();
 		}
 		break;
+	case WM_RESTORE_VOLUME:
+		// Fired by the volume callback when an external source changed the volume
+		if (g_volumeLock && g_endpointVolume)
+		{
+			g_endpointVolume->SetMasterVolumeLevelScalar(
+				static_cast<float>(g_volume), &g_ourVolumeGuid);
+		}
+		break;
 	default:
 		if (WM_TASKBAR_CREATED && message == WM_TASKBAR_CREATED)
 		{
@@ -296,10 +307,17 @@ void SetupMenu()
 		winrt::Windows::System::Launcher::LaunchUriAsync(Uri(L"ms-settings:bluetooth"));
 	});
 
-	MenuFlyoutItem fixItem;
-	fixItem.Text(_(L"Decouple Phone Volume (Fix Sync)"));
-	fixItem.Click([](const auto&, const auto&) {
-		DisableAbsoluteVolume();
+	// Lock toggle: blocks phone volume buttons from changing PC volume
+	static ToggleMenuFlyoutItem lockItem;
+	lockItem.Text(_(L"Lock Phone Volume Buttons"));
+	lockItem.IsChecked(g_volumeLock);
+	lockItem.Click([](const auto&, const auto&) {
+		g_volumeLock = lockItem.IsChecked();
+		// When enabling, immediately restore our preferred level
+		if (g_volumeLock && g_endpointVolume)
+			g_endpointVolume->SetMasterVolumeLevelScalar(
+				static_cast<float>(g_volume), &g_ourVolumeGuid);
+		SaveSettings();
 	});
 
 	FontIcon volumeIcon;
@@ -358,7 +376,7 @@ void SetupMenu()
 
 	MenuFlyout menu;
 	menu.Items().Append(settingsItem);
-	menu.Items().Append(fixItem);
+	menu.Items().Append(lockItem);
 	menu.Items().Append(volumeItem);
 	menu.Items().Append(exitItem);
 	menu.Opened([](const auto& sender, const auto&) {
@@ -538,64 +556,90 @@ void UpdateNotifyIcon()
 	}
 }
 
-void UpdateVolume()
+// COM callback class that intercepts master volume changes.
+// When the phone uses AVRCP to change volume, OnNotify fires with a foreign GUID.
+// We post WM_RESTORE_VOLUME so the main thread immediately reverts it.
+class VolumeCallback : public IAudioEndpointVolumeCallback
+{
+public:
+	ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_ref); }
+	ULONG STDMETHODCALLTYPE Release() override
+	{
+		auto r = InterlockedDecrement(&m_ref);
+		if (r == 0) delete this;
+		return r;
+	}
+	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
+	{
+		if (riid == __uuidof(IUnknown) || riid == __uuidof(IAudioEndpointVolumeCallback))
+		{
+			*ppv = static_cast<IAudioEndpointVolumeCallback*>(this);
+			AddRef();
+			return S_OK;
+		}
+		*ppv = nullptr;
+		return E_NOINTERFACE;
+	}
+	HRESULT STDMETHODCALLTYPE OnNotify(PAUDIO_VOLUME_NOTIFICATION_DATA pNotify) override
+	{
+		// Ignore changes we made ourselves
+		if (IsEqualGUID(pNotify->guidEventContext, g_ourVolumeGuid))
+			return S_OK;
+		// External change (AVRCP / other app) — tell the main thread to restore
+		if (g_volumeLock && g_hWnd)
+			PostMessageW(g_hWnd, WM_RESTORE_VOLUME, 0, 0);
+		return S_OK;
+	}
+private:
+	long m_ref = 1;
+};
+
+static VolumeCallback* g_volumeCallback = nullptr;
+
+void SetupEndpointVolume()
 {
 	try
 	{
-		winrt::com_ptr<IMMDeviceEnumerator> deviceEnumerator;
-		winrt::check_hresult(CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_INPROC_SERVER, __uuidof(IMMDeviceEnumerator), (LPVOID*)deviceEnumerator.put()));
+		winrt::com_ptr<IMMDeviceEnumerator> enumerator;
+		winrt::check_hresult(CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL,
+			CLSCTX_INPROC_SERVER, __uuidof(IMMDeviceEnumerator), (void**)enumerator.put()));
 
-		winrt::com_ptr<IMMDevice> defaultDevice;
-		winrt::check_hresult(deviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, defaultDevice.put()));
+		winrt::com_ptr<IMMDevice> device;
+		winrt::check_hresult(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, device.put()));
 
-		winrt::com_ptr<IAudioSessionManager2> sessionManager;
-		winrt::check_hresult(defaultDevice->Activate(__uuidof(IAudioSessionManager2), CLSCTX_INPROC_SERVER, NULL, (void**)sessionManager.put()));
+		winrt::check_hresult(device->Activate(__uuidof(IAudioEndpointVolume),
+			CLSCTX_INPROC_SERVER, NULL, (void**)g_endpointVolume.put()));
 
-		winrt::com_ptr<IAudioSessionEnumerator> sessionEnumerator;
-		winrt::check_hresult(sessionManager->GetSessionEnumerator(sessionEnumerator.put()));
+		g_volumeCallback = new VolumeCallback();
+		winrt::check_hresult(g_endpointVolume->RegisterControlChangeNotify(g_volumeCallback));
 
-		int sessionCount = 0;
-		winrt::check_hresult(sessionEnumerator->GetCount(&sessionCount));
-
-		const DWORD thisPid = GetCurrentProcessId();
-		bool applied = false;
-
-		for (int i = 0; i < sessionCount; ++i)
-		{
-			winrt::com_ptr<IAudioSessionControl> sessionControl;
-			if (FAILED(sessionEnumerator->GetSession(i, sessionControl.put())))
-				continue;
-
-			winrt::com_ptr<IAudioSessionControl2> sessionControl2;
-			if (FAILED(sessionControl->QueryInterface(__uuidof(IAudioSessionControl2), (void**)sessionControl2.put())))
-				continue;
-
-			DWORD pid = 0;
-			sessionControl2->GetProcessId(&pid);
-			if (pid != thisPid)
-				continue;
-
-			winrt::com_ptr<ISimpleAudioVolume> simpleVolume;
-			if (FAILED(sessionControl->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)simpleVolume.put())))
-				continue;
-
-			simpleVolume->SetMasterVolume(static_cast<float>(g_volume), NULL);
-			applied = true;
-		}
-
-		// Fallback: if no session found yet (app just started), apply to default session
-		if (!applied)
-		{
-			winrt::com_ptr<ISimpleAudioVolume> simpleVolume;
-			if (SUCCEEDED(sessionManager->GetSimpleAudioVolume(NULL, 0, simpleVolume.put())))
-			{
-				simpleVolume->SetMasterVolume(static_cast<float>(g_volume), NULL);
-			}
-		}
+		// Apply our saved volume immediately
+		g_endpointVolume->SetMasterVolumeLevelScalar(
+			static_cast<float>(g_volume), &g_ourVolumeGuid);
 	}
 	catch (...)
 	{
 		LOG_CAUGHT_EXCEPTION();
+	}
+}
+
+void TeardownEndpointVolume()
+{
+	if (g_endpointVolume && g_volumeCallback)
+	{
+		g_endpointVolume->UnregisterControlChangeNotify(g_volumeCallback);
+		g_volumeCallback->Release();
+		g_volumeCallback = nullptr;
+	}
+	g_endpointVolume = nullptr;
+}
+
+void UpdateVolume()
+{
+	if (g_endpointVolume)
+	{
+		g_endpointVolume->SetMasterVolumeLevelScalar(
+			static_cast<float>(g_volume), &g_ourVolumeGuid);
 	}
 }
 

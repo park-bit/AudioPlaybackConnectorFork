@@ -13,6 +13,7 @@ namespace fs = std::filesystem;
 
 constexpr UINT WM_NOTIFYICON = WM_APP + 1;
 constexpr UINT WM_CONNECTDEVICE = WM_APP + 2;
+constexpr UINT WM_RESTORE_VOLUME = WM_APP + 3;
 
 HINSTANCE g_hInst;
 HWND g_hWnd;
@@ -39,6 +40,10 @@ UINT WM_TASKBAR_CREATED = 0;
 bool g_reconnect = false;
 std::vector<std::wstring> g_lastDevices;
 double g_volume = 0.2;
+bool g_volumeLock = true;
+winrt::com_ptr<IAudioEndpointVolume> g_endpointVolume;
+// GUID used to tag our own volume changes so the callback ignores them
+static const GUID g_ourVolumeGuid = { 0x9a4b2d1c, 0x3e5f, 0x4a6b, { 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0xa7, 0xb8, 0xc9 } };
 
 #include "Util.hpp"
 #include "I18n.hpp"
