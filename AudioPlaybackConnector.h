@@ -19,6 +19,7 @@ HWND g_hWnd;
 HWND g_hWndXaml;
 Canvas g_xamlCanvas = nullptr;
 Flyout g_xamlFlyout = nullptr;
+Flyout g_volumeFlyout = nullptr;
 MenuFlyout g_xamlMenu = nullptr;
 FocusState g_menuFocusState = FocusState::Unfocused;
 DevicePicker g_devicePicker = nullptr;
@@ -37,6 +38,7 @@ NOTIFYICONIDENTIFIER g_niid = {
 UINT WM_TASKBAR_CREATED = 0;
 bool g_reconnect = false;
 std::vector<std::wstring> g_lastDevices;
+double g_volume = 0.2;
 
 #include "Util.hpp"
 #include "I18n.hpp"

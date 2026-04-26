@@ -7,6 +7,7 @@ void DefaultSettings()
 {
 	g_reconnect = false;
 	g_lastDevices.clear();
+	g_volume = 0.2;
 }
 
 void LoadSettings()
@@ -33,6 +34,10 @@ void LoadSettings()
 		std::wstring utf16 = Utf8ToUtf16(string);
 		auto jsonObj = JsonObject::Parse(utf16);
 		g_reconnect = jsonObj.Lookup(L"reconnect").GetBoolean();
+		if (jsonObj.HasKey(L"volume"))
+		{
+			g_volume = jsonObj.Lookup(L"volume").GetNumber();
+		}
 
 		auto lastDevices = jsonObj.Lookup(L"lastDevices").GetArray();
 		g_lastDevices.reserve(lastDevices.Size());
@@ -51,6 +56,7 @@ void SaveSettings()
 	{
 		JsonObject jsonObj;
 		jsonObj.Insert(L"reconnect", JsonValue::CreateBooleanValue(g_reconnect));
+		jsonObj.Insert(L"volume", JsonValue::CreateNumberValue(g_volume));
 
 		JsonArray lastDevices;
 		for (const auto& i : g_audioPlaybackConnections)

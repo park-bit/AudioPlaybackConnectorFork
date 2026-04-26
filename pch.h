@@ -18,7 +18,8 @@
 #include <shobjidl_core.h>
 #include <d2d1_3.h>
 #include <shlwapi.h>
-
+#include <mmdeviceapi.h>
+#include <audiopolicy.h>
 // C++ RunTime Header Files
 #include <cstdlib>
 #include <cstdint>

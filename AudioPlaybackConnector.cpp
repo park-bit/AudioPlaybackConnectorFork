@@ -3,7 +3,9 @@
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void SetupFlyout();
+void SetupVolumeFlyout();
 void SetupMenu();
+void UpdateVolume();
 winrt::fire_and_forget ConnectDevice(DevicePicker, std::wstring_view);
 void SetupDevicePicker();
 void SetupSvgIcon();
@@ -67,7 +69,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	desktopSource.Content(g_xamlCanvas);
 
 	LoadSettings();
+	UpdateVolume();
 	SetupFlyout();
+	SetupVolumeFlyout();
 	SetupMenu();
 	SetupDevicePicker();
 	SetupSvgIcon();
@@ -227,6 +231,37 @@ void SetupFlyout()
 	g_xamlFlyout = flyout;
 }
 
+void SetupVolumeFlyout()
+{
+	TextBlock textBlock;
+	textBlock.Text(_(L"Mobile Volume"));
+	textBlock.Margin({ 0, 0, 0, 12 });
+
+	Slider slider;
+	slider.Minimum(0);
+	slider.Maximum(100);
+	slider.Value(g_volume * 100);
+	slider.Width(200);
+	slider.ValueChanged([](const auto&, const auto& args) {
+		g_volume = args.NewValue() / 100.0;
+		UpdateVolume();
+	});
+
+	StackPanel stackPanel;
+	stackPanel.Children().Append(textBlock);
+	stackPanel.Children().Append(slider);
+
+	Flyout flyout;
+	flyout.ShouldConstrainToRootBounds(false);
+	flyout.Content(stackPanel);
+	flyout.Closed([](const auto&, const auto&) {
+		ShowWindow(g_hWnd, SW_HIDE);
+		SaveSettings();
+	});
+
+	g_volumeFlyout = flyout;
+}
+
 void SetupMenu()
 {
 	// https://docs.microsoft.com/en-us/windows/uwp/design/style/segoe-ui-symbol-font
@@ -238,6 +273,30 @@ void SetupMenu()
 	settingsItem.Icon(settingsIcon);
 	settingsItem.Click([](const auto&, const auto&) {
 		winrt::Windows::System::Launcher::LaunchUriAsync(Uri(L"ms-settings:bluetooth"));
+	});
+
+	FontIcon volumeIcon;
+	volumeIcon.Glyph(L"\xE767");
+
+	MenuFlyoutItem volumeItem;
+	volumeItem.Text(_(L"Volume Control"));
+	volumeItem.Icon(volumeIcon);
+	volumeItem.Click([](const auto&, const auto&) {
+		RECT iconRect;
+		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
+		if (FAILED(hr))
+		{
+			LOG_HR(hr);
+			return;
+		}
+
+		auto dpi = GetDpiForWindow(g_hWnd);
+
+		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 0, 0, SWP_HIDEWINDOW);
+		g_xamlCanvas.Width(static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI / dpi));
+		g_xamlCanvas.Height(static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi));
+
+		g_volumeFlyout.ShowAt(g_xamlCanvas);
 	});
 
 	FontIcon closeIcon;
@@ -272,6 +331,7 @@ void SetupMenu()
 
 	MenuFlyout menu;
 	menu.Items().Append(settingsItem);
+	menu.Items().Append(volumeItem);
 	menu.Items().Append(exitItem);
 	menu.Opened([](const auto& sender, const auto&) {
 		auto menuItems = sender.as<MenuFlyout>().Items();
@@ -447,5 +507,29 @@ void UpdateNotifyIcon()
 		{
 			LOG_LAST_ERROR();
 		}
+	}
+}
+
+void UpdateVolume()
+{
+	try
+	{
+		winrt::com_ptr<IMMDeviceEnumerator> deviceEnumerator;
+		winrt::check_hresult(CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_INPROC_SERVER, __uuidof(IMMDeviceEnumerator), (LPVOID*)deviceEnumerator.put()));
+
+		winrt::com_ptr<IMMDevice> defaultDevice;
+		winrt::check_hresult(deviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, defaultDevice.put()));
+
+		winrt::com_ptr<IAudioSessionManager2> sessionManager;
+		winrt::check_hresult(defaultDevice->Activate(__uuidof(IAudioSessionManager2), CLSCTX_INPROC_SERVER, NULL, (void**)sessionManager.put()));
+
+		winrt::com_ptr<ISimpleAudioVolume> simpleVolume;
+		winrt::check_hresult(sessionManager->GetSimpleAudioVolume(NULL, 0, simpleVolume.put()));
+
+		winrt::check_hresult(simpleVolume->SetMasterVolume(static_cast<float>(g_volume), NULL));
+	}
+	catch (...)
+	{
+		LOG_CAUGHT_EXCEPTION();
 	}
 }
