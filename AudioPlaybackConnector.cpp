@@ -16,6 +16,39 @@ void UpdateNotifyIcon();
 
 // Audio session management globals and helpers
 static IAudioSessionManager2* g_sessionManager = nullptr;
+
+// Helper to identify if an audio session belongs to the phone audio stream
+static bool IsBluetoothSession(IAudioSessionControl2* ctrl2, IAudioSessionControl* ctrl)
+{
+	// Check PID first (if it's in our process, it's definitely ours)
+	DWORD pid = 0;
+	if (SUCCEEDED(ctrl2->GetProcessId(&pid)) && pid == GetCurrentProcessId()) return true;
+
+	// Check Session Identifier (usually contains BTHENUM, A2DP, etc.)
+	PWSTR id = nullptr;
+	if (SUCCEEDED(ctrl2->GetSessionInstanceIdentifier(&id)))
+	{
+		std::wstring sid(id);
+		CoTaskMemFree(id);
+		for (auto& c : sid) c = towlower(c);
+		if (sid.find(L"bthenum") != std::wstring::npos || sid.find(L"a2dp") != std::wstring::npos || sid.find(L"bluetooth") != std::wstring::npos)
+			return true;
+	}
+
+	// Check Display Name (e.g. "Microphone (iQOO Z3 5G A2DP SNK)")
+	PWSTR disp = nullptr;
+	if (SUCCEEDED(ctrl->GetDisplayName(&disp)))
+	{
+		std::wstring sdisp(disp);
+		CoTaskMemFree(disp);
+		for (auto& c : sdisp) c = towlower(c);
+		if (sdisp.find(L"a2dp") != std::wstring::npos || sdisp.find(L"snk") != std::wstring::npos || sdisp.find(L"iqoo") != std::wstring::npos)
+			return true;
+	}
+
+	return false;
+}
+
 static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr);
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
@@ -318,10 +351,9 @@ void SetupMenu()
 	lockItem.IsChecked(g_volumeLock);
 	lockItem.Click([](const auto&, const auto&) {
 		g_volumeLock = lockItem.IsChecked();
-		// When enabling, immediately restore our preferred level
+		// When enabling, immediately restore our preferred master volume level
 		if (g_volumeLock && g_endpointVolume)
-			g_endpointVolume->SetMasterVolumeLevelScalar(
-				static_cast<float>(g_volume), &g_ourVolumeGuid);
+			g_endpointVolume->SetMasterVolumeLevelScalar(g_lastMasterVolume, &g_ourVolumeGuid);
 		SaveSettings();
 	});
 
@@ -570,7 +602,6 @@ static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr)
 
 	int count = 0;
 	sessionEnum->GetCount(&count);
-	const DWORD ourPid = GetCurrentProcessId();
 
 	for (int i = 0; i < count; ++i)
 	{
@@ -580,31 +611,13 @@ static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr)
 		IAudioSessionControl2* ctrl2 = nullptr;
 		if (SUCCEEDED(ctrl->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&ctrl2)))
 		{
-			bool isOurs = false;
-
-			// Check 1: Is it in our process?
-			DWORD pid = 0;
-			ctrl2->GetProcessId(&pid);
-			if (pid == ourPid) isOurs = true;
-
-			// Check 2: Does it have a Bluetooth/A2DP identifier?
-			PWSTR id = nullptr;
-			if (SUCCEEDED(ctrl2->GetSessionInstanceIdentifier(&id)))
-			{
-				if (id && (wcsstr(id, L"BTHENUM") != nullptr || wcsstr(id, L"Bluetooth") != nullptr || wcsstr(id, L"A2DP") != nullptr || wcsstr(id, L"Phone") != nullptr))
-				{
-					isOurs = true;
-				}
-				CoTaskMemFree(id);
-			}
-
-			if (isOurs)
+			if (IsBluetoothSession(ctrl2, ctrl))
 			{
 				ISimpleAudioVolume* vol = nullptr;
 				if (SUCCEEDED(ctrl->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol)))
 				{
-					// Use a 0.4x scale to fix the "Mobile is significantly louder than PC" issue.
-					vol->SetMasterVolume(static_cast<float>(g_volume * 0.4), nullptr);
+					// Use a 0.5x scale to keep mobile audio in a comfortable range relative to PC
+					vol->SetMasterVolume(static_cast<float>(g_volume * 0.5), nullptr);
 					vol->Release();
 				}
 			}
@@ -716,18 +729,16 @@ public:
 		IAudioSessionControl2* ctrl2 = nullptr;
 		if (SUCCEEDED(pNewSession->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&ctrl2)))
 		{
-			DWORD pid = 0;
-			ctrl2->GetProcessId(&pid);
-			ctrl2->Release();
-			if (pid == GetCurrentProcessId())
+			if (IsBluetoothSession(ctrl2, pNewSession))
 			{
 				ISimpleAudioVolume* vol = nullptr;
 				if (SUCCEEDED(pNewSession->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol)))
 				{
-					vol->SetMasterVolume(static_cast<float>(g_volume * 0.4), nullptr);
+					vol->SetMasterVolume(static_cast<float>(g_volume * 0.5), nullptr);
 					vol->Release();
 				}
 			}
+			ctrl2->Release();
 		}
 		return S_OK;
 	}
