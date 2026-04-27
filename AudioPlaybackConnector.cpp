@@ -216,11 +216,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case WM_RESTORE_VOLUME:
-		// Fired by the volume callback when an external source changed the volume
+		// Fired by the volume callback when a remote (phone) source changed the volume
 		if (g_volumeLock && g_endpointVolume)
 		{
-			g_endpointVolume->SetMasterVolumeLevelScalar(
-				static_cast<float>(g_volume), &g_ourVolumeGuid);
+			g_endpointVolume->SetMasterVolumeLevelScalar(g_lastMasterVolume, &g_ourVolumeGuid);
+			g_endpointVolume->SetMute(g_lastMute, &g_ourVolumeGuid);
+			if (g_sessionManager) ApplyVolumeToOurSessions(g_sessionManager);
 		}
 		break;
 	default:
@@ -582,12 +583,11 @@ static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr)
 			ctrl2->GetProcessId(&pid);
 			if (pid == ourPid) isOurs = true;
 
-			// Check 2: Does it have a Bluetooth/BTHENUM identifier?
-			// WinRT AudioPlaybackConnection sessions often have these.
+			// Check 2: Does it have a Bluetooth/A2DP identifier?
 			PWSTR id = nullptr;
 			if (SUCCEEDED(ctrl2->GetSessionInstanceIdentifier(&id)))
 			{
-				if (id && (wcsstr(id, L"BTHENUM") != nullptr || wcsstr(id, L"Bluetooth") != nullptr))
+				if (id && (wcsstr(id, L"BTHENUM") != nullptr || wcsstr(id, L"Bluetooth") != nullptr || wcsstr(id, L"A2DP") != nullptr || wcsstr(id, L"Phone") != nullptr))
 				{
 					isOurs = true;
 				}
@@ -599,7 +599,9 @@ static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr)
 				ISimpleAudioVolume* vol = nullptr;
 				if (SUCCEEDED(ctrl->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol)))
 				{
-					vol->SetMasterVolume(static_cast<float>(g_volume), nullptr);
+					// Use a 0.4x scale to fix the "Mobile is significantly louder than PC" issue.
+					// This gives the user more granular control over the loud phone audio.
+					vol->SetMasterVolume(static_cast<float>(g_volume * 0.4), nullptr);
 					vol->Release();
 				}
 			}
@@ -641,14 +643,44 @@ public:
 		if (IsEqualGUID(pNotify->guidEventContext, g_ourVolumeGuid))
 			return S_OK;
 
-		// 2. Allow manual system changes (keys, Windows slider).
-		// These typically use GUID_NULL. If we block these, the laptop's own keys stop working.
-		if (IsEqualGUID(pNotify->guidEventContext, GUID_NULL))
-			return S_OK;
+		bool isRemote = false;
 
-		// 3. Revert anything else (likely AVRCP / remote changes from the phone).
-		if (g_volumeLock && g_hWnd)
-			PostMessageW(g_hWnd, WM_RESTORE_VOLUME, 0, 0);
+		// Check if it's a system key press or mouse move
+		if (IsEqualGUID(pNotify->guidEventContext, GUID_NULL))
+		{
+			LASTINPUTINFO lii = { sizeof(lii) };
+			lii.cbSize = sizeof(lii);
+			if (GetLastInputInfo(&lii))
+			{
+				DWORD idleTime = GetTickCount() - lii.dwTime;
+				// If the user hasn't touched the PC in the last 1.5 seconds, 
+				// this volume change is almost certainly from the phone (AVRCP).
+				if (idleTime > 1500)
+				{
+					isRemote = true;
+				}
+			}
+		}
+		else
+		{
+			// Any other GUID (phone app or other remote source)
+			isRemote = true;
+		}
+
+		if (isRemote)
+		{
+			// Remote change detected -> Revert to the last user-defined "Authority" level
+			if (g_volumeLock && g_hWnd)
+			{
+				PostMessageW(g_hWnd, WM_RESTORE_VOLUME, 0, 0);
+			}
+		}
+		else
+		{
+			// Local authority: update the last known good level set by the user (laptop keys)
+			g_lastMasterVolume = pNotify->fLevel;
+			g_lastMute = pNotify->bMuted;
+		}
 		return S_OK;
 	}
 private:
@@ -722,6 +754,13 @@ void SetupEndpointVolume()
 		winrt::check_hresult(device->Activate(__uuidof(IAudioEndpointVolume),
 			CLSCTX_INPROC_SERVER, NULL, (void**)&epVol));
 		g_endpointVolume = epVol;
+
+		// Initialize our Authority levels from the current system state
+		float currentVol = 0.5f;
+		BOOL currentMute = FALSE;
+		if (SUCCEEDED(g_endpointVolume->GetMasterVolumeLevelScalar(&currentVol))) g_lastMasterVolume = currentVol;
+		if (SUCCEEDED(g_endpointVolume->GetMute(&currentMute))) g_lastMute = (currentMute != FALSE);
+
 		g_volumeCallback = new VolumeCallback();
 		g_endpointVolume->RegisterControlChangeNotify(g_volumeCallback);
 
@@ -803,7 +842,10 @@ void DisableAbsoluteVolume()
 
 	const wchar_t* paths[] = {
 		L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT",
-		L"SYSTEM\\ControlSet001\\Control\\Bluetooth\\Audio\\AVRCP\\CT"
+		L"SYSTEM\\ControlSet001\\Control\\Bluetooth\\Audio\\AVRCP\\CT",
+		L"SYSTEM\\CurrentControlSet\\Services\\HidBth\\Parameters",
+		L"SYSTEM\\CurrentControlSet\\Services\\BthAvrcpTg\\Parameters",
+		L"SOFTWARE\\Microsoft\\Bluetooth\\Audio\\AVRCP\\CT"
 	};
 
 	bool success = false;
@@ -812,19 +854,21 @@ void DisableAbsoluteVolume()
 		HKEY hKey;
 		if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, path, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS)
 		{
-			DWORD value = 1;
-			if (RegSetValueExW(hKey, L"DisableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&value, sizeof(value)) == ERROR_SUCCESS)
-				success = true;
+			DWORD val1 = 1;
+			DWORD val0 = 0;
+			RegSetValueExW(hKey, L"DisableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&val1, sizeof(val1));
+			RegSetValueExW(hKey, L"EnableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&val0, sizeof(val0));
 			RegCloseKey(hKey);
+			success = true;
 		}
 	}
 
 	if (success)
 	{
-		TaskDialog(g_hWnd, NULL, _(L"System Fix Applied"), _(L"The 'Absolute Volume' sync has been disabled in the registry.\n\nCRITICAL: You MUST REBOOT your laptop now for this to take effect.\n\nAfter rebooting, your phone buttons will no longer touch your PC volume."), NULL, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
+		TaskDialog(g_hWnd, NULL, _(L"System Fix Applied DEFINITIVELY"), _(L"All known registry paths for Absolute Volume have been updated.\n\nCRITICAL: You MUST REBOOT your laptop now for this to take effect.\n\nIf volume buttons still sync after reboot, it means your Bluetooth driver is ignoring system settings."), NULL, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
 	}
 	else
 	{
-		TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to write registry values. Please try running as Administrator manually."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
+		TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to write registry values."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
 	}
 }

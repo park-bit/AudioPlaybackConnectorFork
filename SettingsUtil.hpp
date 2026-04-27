@@ -7,7 +7,7 @@ void DefaultSettings()
 {
 	g_reconnect = false;
 	g_lastDevices.clear();
-	g_volume = 0.2;
+	g_volume = 0.1;
 	g_volumeLock = true;
 }
 
