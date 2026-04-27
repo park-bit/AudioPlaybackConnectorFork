@@ -14,6 +14,10 @@ void SetupDevicePicker();
 void SetupSvgIcon();
 void UpdateNotifyIcon();
 
+// Audio session management globals and helpers
+static IAudioSessionManager2* g_sessionManager = nullptr;
+static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr);
+
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	_In_opt_ HINSTANCE hPrevInstance,
 	_In_ LPWSTR    lpCmdLine,
@@ -600,7 +604,6 @@ static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr)
 				if (SUCCEEDED(ctrl->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol)))
 				{
 					// Use a 0.4x scale to fix the "Mobile is significantly louder than PC" issue.
-					// This gives the user more granular control over the loud phone audio.
 					vol->SetMasterVolume(static_cast<float>(g_volume * 0.4), nullptr);
 					vol->Release();
 				}
@@ -611,9 +614,6 @@ static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr)
 	}
 	sessionEnum->Release();
 }
-
-// Holds the session manager so we can re-enumerate on UpdateVolume calls.
-static IAudioSessionManager2* g_sessionManager = nullptr;
 
 // Intercepts master volume changes; blocks AVRCP (phone buttons) from altering PC volume.
 class VolumeCallback : public IAudioEndpointVolumeCallback
@@ -678,7 +678,7 @@ public:
 		else
 		{
 			// Local authority: update the last known good level set by the user (laptop keys)
-			g_lastMasterVolume = pNotify->fLevel;
+			g_lastMasterVolume = pNotify->fMasterVolume;
 			g_lastMute = pNotify->bMuted;
 		}
 		return S_OK;
@@ -724,7 +724,7 @@ public:
 				ISimpleAudioVolume* vol = nullptr;
 				if (SUCCEEDED(pNewSession->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol)))
 				{
-					vol->SetMasterVolume(static_cast<float>(g_volume), nullptr);
+					vol->SetMasterVolume(static_cast<float>(g_volume * 0.4), nullptr);
 					vol->Release();
 				}
 			}
