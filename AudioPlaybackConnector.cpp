@@ -556,9 +556,47 @@ void UpdateNotifyIcon()
 	}
 }
 
-// COM callback class that intercepts master volume changes.
-// When the phone uses AVRCP to change volume, OnNotify fires with a foreign GUID.
-// We post WM_RESTORE_VOLUME so the main thread immediately reverts it.
+// Applies g_volume to every active audio session belonging to our process.
+// AudioPlaybackConnection audio appears as a session in our PID when the phone streams.
+static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr)
+{
+	IAudioSessionEnumerator* sessionEnum = nullptr;
+	if (FAILED(mgr->GetSessionEnumerator(&sessionEnum))) return;
+
+	int count = 0;
+	sessionEnum->GetCount(&count);
+	const DWORD ourPid = GetCurrentProcessId();
+
+	for (int i = 0; i < count; ++i)
+	{
+		IAudioSessionControl* ctrl = nullptr;
+		if (FAILED(sessionEnum->GetSession(i, &ctrl))) continue;
+
+		IAudioSessionControl2* ctrl2 = nullptr;
+		if (SUCCEEDED(ctrl->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&ctrl2)))
+		{
+			DWORD pid = 0;
+			ctrl2->GetProcessId(&pid);
+			ctrl2->Release();
+			if (pid == ourPid)
+			{
+				ISimpleAudioVolume* vol = nullptr;
+				if (SUCCEEDED(ctrl->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol)))
+				{
+					vol->SetMasterVolume(static_cast<float>(g_volume), nullptr);
+					vol->Release();
+				}
+			}
+		}
+		ctrl->Release();
+	}
+	sessionEnum->Release();
+}
+
+// Holds the session manager so we can re-enumerate on UpdateVolume calls.
+static IAudioSessionManager2* g_sessionManager = nullptr;
+
+// Intercepts master volume changes; blocks AVRCP (phone buttons) from altering PC volume.
 class VolumeCallback : public IAudioEndpointVolumeCallback
 {
 public:
@@ -582,10 +620,8 @@ public:
 	}
 	HRESULT STDMETHODCALLTYPE OnNotify(PAUDIO_VOLUME_NOTIFICATION_DATA pNotify) override
 	{
-		// Ignore changes we made ourselves
 		if (IsEqualGUID(pNotify->guidEventContext, g_ourVolumeGuid))
 			return S_OK;
-		// External change (AVRCP / other app) — tell the main thread to restore
 		if (g_volumeLock && g_hWnd)
 			PostMessageW(g_hWnd, WM_RESTORE_VOLUME, 0, 0);
 		return S_OK;
@@ -593,8 +629,56 @@ public:
 private:
 	long m_ref = 1;
 };
-
 static VolumeCallback* g_volumeCallback = nullptr;
+
+// Called by Windows when a new audio session is created.
+// We use this to immediately apply our volume when AudioPlaybackConnection starts streaming.
+class SessionNotifier : public IAudioSessionNotification
+{
+public:
+	ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_ref); }
+	ULONG STDMETHODCALLTYPE Release() override
+	{
+		auto r = InterlockedDecrement(&m_ref);
+		if (r == 0) delete this;
+		return r;
+	}
+	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
+	{
+		if (riid == __uuidof(IUnknown) || riid == __uuidof(IAudioSessionNotification))
+		{
+			*ppv = static_cast<IAudioSessionNotification*>(this);
+			AddRef();
+			return S_OK;
+		}
+		*ppv = nullptr;
+		return E_NOINTERFACE;
+	}
+	HRESULT STDMETHODCALLTYPE OnSessionCreated(IAudioSessionControl* pNewSession) override
+	{
+		IAudioSessionControl2* ctrl2 = nullptr;
+		if (SUCCEEDED(pNewSession->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&ctrl2)))
+		{
+			DWORD pid = 0;
+			ctrl2->GetProcessId(&pid);
+			ctrl2->Release();
+			if (pid == GetCurrentProcessId())
+			{
+				ISimpleAudioVolume* vol = nullptr;
+				if (SUCCEEDED(pNewSession->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol)))
+				{
+					vol->SetMasterVolume(static_cast<float>(g_volume), nullptr);
+					vol->Release();
+				}
+			}
+		}
+		return S_OK;
+	}
+private:
+	long m_ref = 1;
+};
+
+static SessionNotifier* g_sessionNotifier = nullptr;
 
 void SetupEndpointVolume()
 {
@@ -608,18 +692,26 @@ void SetupEndpointVolume()
 		winrt::check_hresult(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device));
 		enumerator->Release();
 
+		// Register AVRCP guardian (blocks phone buttons from changing master volume)
 		IAudioEndpointVolume* epVol = nullptr;
 		winrt::check_hresult(device->Activate(__uuidof(IAudioEndpointVolume),
 			CLSCTX_INPROC_SERVER, NULL, (void**)&epVol));
-		device->Release();
-
 		g_endpointVolume = epVol;
 		g_volumeCallback = new VolumeCallback();
-		winrt::check_hresult(g_endpointVolume->RegisterControlChangeNotify(g_volumeCallback));
+		g_endpointVolume->RegisterControlChangeNotify(g_volumeCallback);
 
-		// Apply our saved volume immediately
-		g_endpointVolume->SetMasterVolumeLevelScalar(
-			static_cast<float>(g_volume), &g_ourVolumeGuid);
+		// Register session notifier so we catch AudioPlaybackConnection sessions the moment they start
+		IAudioSessionManager2* mgr = nullptr;
+		if (SUCCEEDED(device->Activate(__uuidof(IAudioSessionManager2),
+			CLSCTX_INPROC_SERVER, NULL, (void**)&mgr)))
+		{
+			g_sessionManager = mgr; // keep alive for UpdateVolume
+			g_sessionNotifier = new SessionNotifier();
+			mgr->RegisterSessionNotification(g_sessionNotifier);
+			// Apply to any sessions already running
+			ApplyVolumeToOurSessions(mgr);
+		}
+		device->Release();
 	}
 	catch (...)
 	{
@@ -629,6 +721,14 @@ void SetupEndpointVolume()
 
 void TeardownEndpointVolume()
 {
+	if (g_sessionManager && g_sessionNotifier)
+	{
+		g_sessionManager->UnregisterSessionNotification(g_sessionNotifier);
+		g_sessionNotifier->Release();
+		g_sessionNotifier = nullptr;
+		g_sessionManager->Release();
+		g_sessionManager = nullptr;
+	}
 	if (g_endpointVolume && g_volumeCallback)
 	{
 		g_endpointVolume->UnregisterControlChangeNotify(g_volumeCallback);
@@ -641,11 +741,9 @@ void TeardownEndpointVolume()
 
 void UpdateVolume()
 {
-	if (g_endpointVolume)
-	{
-		g_endpointVolume->SetMasterVolumeLevelScalar(
-			static_cast<float>(g_volume), &g_ourVolumeGuid);
-	}
+	// Set volume on our process's sessions (the AudioPlaybackConnection audio)
+	if (g_sessionManager)
+		ApplyVolumeToOurSessions(g_sessionManager);
 }
 
 static bool IsRunningAsAdmin()
