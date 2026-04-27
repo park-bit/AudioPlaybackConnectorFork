@@ -9,6 +9,7 @@ void DefaultSettings()
 	g_lastDevices.clear();
 	g_volume = 0.1;
 	g_volumeLock = true;
+	g_runAtStartup = false;
 }
 
 void LoadSettings()
@@ -43,6 +44,10 @@ void LoadSettings()
 		{
 			g_volumeLock = jsonObj.Lookup(L"volumeLock").GetBoolean();
 		}
+		if (jsonObj.HasKey(L"runAtStartup"))
+		{
+			g_runAtStartup = jsonObj.Lookup(L"runAtStartup").GetBoolean();
+		}
 
 		auto lastDevices = jsonObj.Lookup(L"lastDevices").GetArray();
 		g_lastDevices.reserve(lastDevices.Size());
@@ -63,6 +68,7 @@ void SaveSettings()
 		jsonObj.Insert(L"reconnect", JsonValue::CreateBooleanValue(g_reconnect));
 		jsonObj.Insert(L"volume", JsonValue::CreateNumberValue(g_volume));
 		jsonObj.Insert(L"volumeLock", JsonValue::CreateBooleanValue(g_volumeLock));
+		jsonObj.Insert(L"runAtStartup", JsonValue::CreateBooleanValue(g_runAtStartup));
 
 		JsonArray lastDevices;
 		for (const auto& i : g_audioPlaybackConnections)
