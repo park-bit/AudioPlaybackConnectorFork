@@ -31,7 +31,7 @@ static bool IsBluetoothSession(IAudioSessionControl2* ctrl2, IAudioSessionContro
 		std::wstring sid(id);
 		CoTaskMemFree(id);
 		for (auto& c : sid) c = towlower(c);
-		if (sid.find(L"bthenum") != std::wstring::npos || sid.find(L"a2dp") != std::wstring::npos || sid.find(L"bluetooth") != std::wstring::npos)
+		if (sid.find(L"bthenum") != std::wstring::npos || sid.find(L"a2dp") != std::wstring::npos || sid.find(L"bluetooth") != std::wstring::npos || sid.find(L"snk") != std::wstring::npos)
 			return true;
 	}
 
@@ -42,7 +42,7 @@ static bool IsBluetoothSession(IAudioSessionControl2* ctrl2, IAudioSessionContro
 		std::wstring sdisp(disp);
 		CoTaskMemFree(disp);
 		for (auto& c : sdisp) c = towlower(c);
-		if (sdisp.find(L"a2dp") != std::wstring::npos || sdisp.find(L"snk") != std::wstring::npos || sdisp.find(L"iqoo") != std::wstring::npos)
+		if (sdisp.find(L"a2dp") != std::wstring::npos || sdisp.find(L"snk") != std::wstring::npos || sdisp.find(L"iqoo") != std::wstring::npos || sdisp.find(L"phone") != std::wstring::npos)
 			return true;
 	}
 
@@ -616,8 +616,8 @@ static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr)
 				ISimpleAudioVolume* vol = nullptr;
 				if (SUCCEEDED(ctrl->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol)))
 				{
-					// Use a 0.5x scale to keep mobile audio in a comfortable range relative to PC
-					vol->SetMasterVolume(static_cast<float>(g_volume * 0.5), nullptr);
+					// Use a 0.7x scale to keep mobile audio in a comfortable range.
+					vol->SetMasterVolume(static_cast<float>(g_volume * 0.7), nullptr);
 					vol->Release();
 				}
 			}
@@ -682,9 +682,12 @@ public:
 
 		if (isRemote)
 		{
-			// Remote change detected -> Revert to the last user-defined "Authority" level
+			// Remote change detected (Phone buttons)
 			if (g_volumeLock && g_hWnd)
 			{
+				// Sync the phone's requested level to our app's slider (g_volume)
+				g_volume = pNotify->fMasterVolume;
+				// Post message to restore master volume to our Authority level and re-apply g_volume to the session
 				PostMessageW(g_hWnd, WM_RESTORE_VOLUME, 0, 0);
 			}
 		}
@@ -734,7 +737,7 @@ public:
 				ISimpleAudioVolume* vol = nullptr;
 				if (SUCCEEDED(pNewSession->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol)))
 				{
-					vol->SetMasterVolume(static_cast<float>(g_volume * 0.5), nullptr);
+					vol->SetMasterVolume(static_cast<float>(g_volume * 0.7), nullptr);
 					vol->Release();
 				}
 			}
