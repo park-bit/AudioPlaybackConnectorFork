@@ -575,10 +575,26 @@ static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr)
 		IAudioSessionControl2* ctrl2 = nullptr;
 		if (SUCCEEDED(ctrl->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&ctrl2)))
 		{
+			bool isOurs = false;
+
+			// Check 1: Is it in our process?
 			DWORD pid = 0;
 			ctrl2->GetProcessId(&pid);
-			ctrl2->Release();
-			if (pid == ourPid)
+			if (pid == ourPid) isOurs = true;
+
+			// Check 2: Does it have a Bluetooth/BTHENUM identifier?
+			// WinRT AudioPlaybackConnection sessions often have these.
+			PWSTR id = nullptr;
+			if (SUCCEEDED(ctrl2->GetSessionInstanceIdentifier(&id)))
+			{
+				if (id && (wcsstr(id, L"BTHENUM") != nullptr || wcsstr(id, L"Bluetooth") != nullptr))
+				{
+					isOurs = true;
+				}
+				CoTaskMemFree(id);
+			}
+
+			if (isOurs)
 			{
 				ISimpleAudioVolume* vol = nullptr;
 				if (SUCCEEDED(ctrl->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol)))
@@ -587,6 +603,7 @@ static void ApplyVolumeToOurSessions(IAudioSessionManager2* mgr)
 					vol->Release();
 				}
 			}
+			ctrl2->Release();
 		}
 		ctrl->Release();
 	}
@@ -620,8 +637,16 @@ public:
 	}
 	HRESULT STDMETHODCALLTYPE OnNotify(PAUDIO_VOLUME_NOTIFICATION_DATA pNotify) override
 	{
+		// 1. Allow our own changes
 		if (IsEqualGUID(pNotify->guidEventContext, g_ourVolumeGuid))
 			return S_OK;
+
+		// 2. Allow manual system changes (keys, Windows slider).
+		// These typically use GUID_NULL. If we block these, the laptop's own keys stop working.
+		if (IsEqualGUID(pNotify->guidEventContext, GUID_NULL))
+			return S_OK;
+
+		// 3. Revert anything else (likely AVRCP / remote changes from the phone).
 		if (g_volumeLock && g_hWnd)
 			PostMessageW(g_hWnd, WM_RESTORE_VOLUME, 0, 0);
 		return S_OK;
@@ -763,7 +788,7 @@ static bool IsRunningAsAdmin()
 
 void DisableAbsoluteVolume()
 {
-	// If not admin, relaunch with UAC elevation and a flag to apply the fix
+	// If not admin, relaunch with UAC elevation
 	if (!IsRunningAsAdmin())
 	{
 		wchar_t exePath[MAX_PATH];
@@ -771,36 +796,35 @@ void DisableAbsoluteVolume()
 		HINSTANCE result = ShellExecuteW(g_hWnd, L"runas", exePath, L"--fix-absolute-volume", NULL, SW_SHOWNORMAL);
 		if (reinterpret_cast<INT_PTR>(result) <= 32)
 		{
-			TaskDialog(g_hWnd, NULL, _(L"Cancelled"), _(L"Administrator privileges are required to disable Absolute Volume.\nPlease try again and click Yes on the UAC prompt."), NULL, TDCBF_OK_BUTTON, TD_WARNING_ICON, NULL);
+			TaskDialog(g_hWnd, NULL, _(L"Cancelled"), _(L"Administrator privileges are required to apply the system fix.\nPlease try again and click Yes on the UAC prompt."), NULL, TDCBF_OK_BUTTON, TD_WARNING_ICON, NULL);
 		}
 		return;
 	}
 
-	// Check command line arg path: when relaunched as admin with --fix-absolute-volume
-	HKEY hKey;
-	LONG openResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT", 0, KEY_SET_VALUE, &hKey);
-	if (openResult != ERROR_SUCCESS)
+	const wchar_t* paths[] = {
+		L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT",
+		L"SYSTEM\\ControlSet001\\Control\\Bluetooth\\Audio\\AVRCP\\CT"
+	};
+
+	bool success = false;
+	for (auto path : paths)
 	{
-		// Key may not exist yet, try creating it
-		openResult = RegCreateKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL);
+		HKEY hKey;
+		if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, path, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS)
+		{
+			DWORD value = 1;
+			if (RegSetValueExW(hKey, L"DisableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&value, sizeof(value)) == ERROR_SUCCESS)
+				success = true;
+			RegCloseKey(hKey);
+		}
 	}
 
-	if (openResult == ERROR_SUCCESS)
+	if (success)
 	{
-		DWORD value = 1;
-		auto status = RegSetValueExW(hKey, L"DisableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&value, sizeof(value));
-		RegCloseKey(hKey);
-		if (status == ERROR_SUCCESS)
-		{
-			TaskDialog(g_hWnd, NULL, _(L"Success"), _(L"Absolute Volume has been disabled.\n\nYou MUST REBOOT your computer for this change to take effect.\nAfter rebooting, your phone volume buttons will only change the phone's volume, not your PC's master volume."), NULL, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
-		}
-		else
-		{
-			TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to write registry value."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
-		}
+		TaskDialog(g_hWnd, NULL, _(L"System Fix Applied"), _(L"The 'Absolute Volume' sync has been disabled in the registry.\n\nCRITICAL: You MUST REBOOT your laptop now for this to take effect.\n\nAfter rebooting, your phone buttons will no longer touch your PC volume."), NULL, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
 	}
 	else
 	{
-		TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to open or create the Bluetooth registry key."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
+		TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to write registry values. Please try running as Administrator manually."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
 	}
 }
