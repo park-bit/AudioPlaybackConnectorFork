@@ -201,8 +201,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			g_unifiedFlyout.ShowAt(g_xamlCanvas, point);
 		}
 		break;
-		}
-		break;
 	case WM_APP + 10: // Device added
 	{
 		auto info = (DeviceInformation*)wParam;
