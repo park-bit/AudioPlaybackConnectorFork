@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "AudioPlaybackConnector.h"
+#include <winrt/Windows.UI.Text.h>
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void SetupUnifiedUI();
@@ -7,6 +8,13 @@ void UpdateNotifyIcon();
 void DisableAbsoluteVolume();
 void RevertAbsoluteVolume();
 void SetRunAtStartup(bool enable);
+void UpdateVolume();
+void SetupEndpointVolume();
+void TeardownEndpointVolume();
+void SetupSvgIcon();
+bool IsRunningAsAdmin();
+winrt::fire_and_forget ConnectDevice(DevicePicker picker, std::wstring_view deviceId);
+winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation device);
 
 // Audio session management globals and helpers
 static IAudioSessionManager2* g_sessionManager = nullptr;
@@ -198,7 +206,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 1, 1, SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
-			g_unifiedFlyout.ShowAt(g_xamlCanvas, point);
+			g_unifiedFlyout.ShowAt(g_xamlCanvas);
 		}
 		break;
 	case WM_APP + 10: // Device added
