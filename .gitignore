@@ -340,3 +340,6 @@ ASALocalRun/
 healthchecksdb
 
 translate/generated
+
+translate/src/translate-toolkit
+
