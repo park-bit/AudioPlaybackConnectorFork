@@ -600,16 +600,20 @@ void SetupEndpointVolume()
 {
 	try
 	{
-		winrt::com_ptr<IMMDeviceEnumerator> enumerator;
+		IMMDeviceEnumerator* enumerator = nullptr;
 		winrt::check_hresult(CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL,
-			CLSCTX_INPROC_SERVER, __uuidof(IMMDeviceEnumerator), (void**)enumerator.put()));
+			CLSCTX_INPROC_SERVER, __uuidof(IMMDeviceEnumerator), (void**)&enumerator));
 
-		winrt::com_ptr<IMMDevice> device;
-		winrt::check_hresult(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, device.put()));
+		IMMDevice* device = nullptr;
+		winrt::check_hresult(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device));
+		enumerator->Release();
 
+		IAudioEndpointVolume* epVol = nullptr;
 		winrt::check_hresult(device->Activate(__uuidof(IAudioEndpointVolume),
-			CLSCTX_INPROC_SERVER, NULL, (void**)g_endpointVolume.put()));
+			CLSCTX_INPROC_SERVER, NULL, (void**)&epVol));
+		device->Release();
 
+		g_endpointVolume = epVol;
 		g_volumeCallback = new VolumeCallback();
 		winrt::check_hresult(g_endpointVolume->RegisterControlChangeNotify(g_volumeCallback));
 
@@ -630,8 +634,9 @@ void TeardownEndpointVolume()
 		g_endpointVolume->UnregisterControlChangeNotify(g_volumeCallback);
 		g_volumeCallback->Release();
 		g_volumeCallback = nullptr;
+		g_endpointVolume->Release();
+		g_endpointVolume = nullptr;
 	}
-	g_endpointVolume = nullptr;
 }
 
 void UpdateVolume()

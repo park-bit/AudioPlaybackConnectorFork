@@ -20,6 +20,7 @@
 #include <shlwapi.h>
 #include <mmdeviceapi.h>
 #include <audiopolicy.h>
+#include <endpointvolume.h>
 // C++ RunTime Header Files
 #include <cstdlib>
 #include <cstdint>
