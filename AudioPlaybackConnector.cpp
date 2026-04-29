@@ -877,7 +877,7 @@ void SetRunAtStartup(bool enable)
 		{
 			wchar_t exePath[MAX_PATH];
 			GetModuleFileNameW(NULL, exePath, MAX_PATH);
-			RegSetValueExW(hKey, L"AudioPlaybackConnector", 0, REG_SZ, (const BYTE*)exePath, (wcslen(exePath) + 1) * sizeof(wchar_t));
+			RegSetValueExW(hKey, L"AudioPlaybackConnector", 0, REG_SZ, (const BYTE*)exePath, static_cast<DWORD>((wcslen(exePath) + 1) * sizeof(wchar_t)));
 		}
 		else
 		{
