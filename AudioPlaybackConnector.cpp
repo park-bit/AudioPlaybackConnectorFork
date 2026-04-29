@@ -419,22 +419,24 @@ void SetupMenu()
 		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
 		if (FAILED(hr))
 		{
-			// Fall back to cursor position
 			POINT pt;
 			GetCursorPos(&pt);
 			iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
 		}
 
-		// DevicePicker.Show() takes physical pixel coords (RECT in screen space), not DIPs
+		auto dpi = GetDpiForWindow(g_hWnd);
+		float scale = static_cast<float>(USER_DEFAULT_SCREEN_DPI) / dpi;
+
+		// DevicePicker.Show() takes DIPs, not physical pixels
 		Rect rect = {
-			static_cast<float>(iconRect.left),
-			static_cast<float>(iconRect.top),
-			static_cast<float>(iconRect.right - iconRect.left),
-			static_cast<float>(iconRect.bottom - iconRect.top)
+			static_cast<float>(iconRect.left) * scale,
+			static_cast<float>(iconRect.top) * scale,
+			static_cast<float>(iconRect.right - iconRect.left) * scale,
+			static_cast<float>(iconRect.bottom - iconRect.top) * scale
 		};
 
-		// Make the host window visible so DevicePicker HWND owner is valid
-		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, iconRect.right - iconRect.left, iconRect.bottom - iconRect.top, SWP_SHOWWINDOW | SWP_NOACTIVATE);
+		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, iconRect.right - iconRect.left, iconRect.bottom - iconRect.top, SWP_SHOWWINDOW);
+		SetForegroundWindow(g_hWnd);
 		g_devicePicker.Show(rect);
 	});
 
