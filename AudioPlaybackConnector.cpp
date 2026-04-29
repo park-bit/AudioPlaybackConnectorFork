@@ -211,9 +211,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_APP + 10: // Device added
 	{
-		auto info = (DeviceInformation*)wParam;
-		g_devices.Append(*info);
-		delete info;
+		auto idString = reinterpret_cast<std::wstring*>(wParam);
+		ConnectDevice(g_devicePicker, *idString);
+		delete idString;
 	}
 	break;
 	case WM_CONNECTDEVICE:
@@ -377,7 +377,11 @@ void SetupUnifiedUI()
 	auto selector = AudioPlaybackConnection::GetDeviceSelector();
 	auto watcher = DeviceInformation::CreateWatcher(selector);
 	watcher.Added([](const auto&, const auto& info) {
-		g_hWndXaml ? PostMessageW(g_hWnd, WM_APP + 10, (WPARAM)new DeviceInformation(info), 0) : 0;
+		if (g_hWndXaml)
+		{
+			auto idCopy = new std::wstring(info.Id());
+			PostMessageW(g_hWnd, WM_APP + 10, reinterpret_cast<WPARAM>(idCopy), 0);
+		}
 	});
 	watcher.Start();
 }
@@ -774,7 +778,7 @@ void UpdateVolume()
 		ApplyVolumeToOurSessions(g_sessionManager);
 }
 
-static bool IsRunningAsAdmin()
+bool IsRunningAsAdmin()
 {
 	BOOL isAdmin = FALSE;
 	HANDLE token = NULL;
