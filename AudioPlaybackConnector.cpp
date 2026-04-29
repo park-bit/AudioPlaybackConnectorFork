@@ -582,28 +582,6 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, std::wstring_view devi
 	ConnectDevice(picker, device);
 }
 
-void SetupDevicePicker()
-{
-	g_devicePicker = DevicePicker();
-	winrt::check_hresult(g_devicePicker.as<IInitializeWithWindow>()->Initialize(g_hWnd));
-
-	g_devicePicker.Filter().SupportedDeviceSelectors().Append(AudioPlaybackConnection::GetDeviceSelector());
-	g_devicePicker.DevicePickerDismissed([](const auto&, const auto&) {
-		SetWindowPos(g_hWnd, nullptr, 0, 0, 0, 0, SWP_NOZORDER | SWP_HIDEWINDOW);
-	});
-	g_devicePicker.DeviceSelected([](const auto& sender, const auto& args) {
-		ConnectDevice(sender, args.SelectedDevice());
-	});
-	g_devicePicker.DisconnectButtonClicked([](const auto& sender, const auto& args) {
-		auto device = args.Device();
-		auto it = g_audioPlaybackConnections.find(std::wstring(device.Id()));
-		if (it != g_audioPlaybackConnections.end())
-		{
-			it->second.second.Close();
-			g_audioPlaybackConnections.erase(it);
-		}
-		sender.SetDisplayStatus(device, {}, DevicePickerDisplayStatusOptions::None);
-	});
 }
 
 void SetupSvgIcon()
