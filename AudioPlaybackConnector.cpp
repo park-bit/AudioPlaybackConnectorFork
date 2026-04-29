@@ -212,7 +212,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_APP + 10: // Device added
 	{
 		auto idString = reinterpret_cast<std::wstring*>(wParam);
-		ConnectDevice(g_devicePicker, *idString);
+		
+		// Run async task to get device info and append to list
+		auto deviceId = *idString;
+		auto AddDeviceAsync = [](std::wstring id) -> winrt::Windows::Foundation::IAsyncAction
+		{
+			auto device = co_await DeviceInformation::CreateFromIdAsync(id);
+			g_devices.Append(device);
+		};
+		AddDeviceAsync(deviceId);
+		
 		delete idString;
 	}
 	break;
@@ -280,9 +289,7 @@ void SetupUnifiedUI()
 	deviceList.Height(150);
 	deviceList.ItemsSource(g_devices);
 	deviceList.SelectionMode(ListViewSelectionMode::None);
-	
-	// Item Template for Device List
-	deviceList.ItemTemplate(winrt::Windows::UI::Xaml::DataTemplate()); // We'll handle this with a simpler approach or default to Name
+	deviceList.DisplayMemberPath(L"Name");
 
 	deviceList.ItemClick([](const auto&, const auto& args) {
 		auto device = args.ClickedItem().as<DeviceInformation>();
@@ -379,7 +386,7 @@ void SetupUnifiedUI()
 	watcher.Added([](const auto&, const auto& info) {
 		if (g_hWndXaml)
 		{
-			auto idCopy = new std::wstring(info.Id());
+			auto idCopy = new std::wstring(info.Id().c_str());
 			PostMessageW(g_hWnd, WM_APP + 10, reinterpret_cast<WPARAM>(idCopy), 0);
 		}
 	});
@@ -388,7 +395,7 @@ void SetupUnifiedUI()
 
 winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation device)
 {
-	picker.SetDisplayStatus(device, _(L"Connecting"), DevicePickerDisplayStatusOptions::ShowProgress | DevicePickerDisplayStatusOptions::ShowDisconnectButton);
+	if (picker) picker.SetDisplayStatus(device, _(L"Connecting"), DevicePickerDisplayStatusOptions::ShowProgress | DevicePickerDisplayStatusOptions::ShowDisconnectButton);
 
 	bool success = false;
 	std::wstring errorMessage;
@@ -406,7 +413,7 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 					auto it = g_audioPlaybackConnections.find(std::wstring(sender.DeviceId()));
 					if (it != g_audioPlaybackConnections.end())
 					{
-						g_devicePicker.SetDisplayStatus(it->second.first, {}, DevicePickerDisplayStatusOptions::None);
+						if (g_devicePicker) g_devicePicker.SetDisplayStatus(it->second.first, {}, DevicePickerDisplayStatusOptions::None);
 						g_audioPlaybackConnections.erase(it);
 					}
 					sender.Close();
@@ -463,7 +470,7 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 
 	if (success)
 	{
-		picker.SetDisplayStatus(device, _(L"Connected"), DevicePickerDisplayStatusOptions::ShowDisconnectButton);
+		if (picker) picker.SetDisplayStatus(device, _(L"Connected"), DevicePickerDisplayStatusOptions::ShowDisconnectButton);
 	}
 	else
 	{
@@ -473,7 +480,7 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 			it->second.second.Close();
 			g_audioPlaybackConnections.erase(it);
 		}
-		picker.SetDisplayStatus(device, errorMessage, DevicePickerDisplayStatusOptions::ShowRetryButton);
+		if (picker) picker.SetDisplayStatus(device, errorMessage, DevicePickerDisplayStatusOptions::ShowRetryButton);
 	}
 }
 
