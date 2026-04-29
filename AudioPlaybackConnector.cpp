@@ -189,6 +189,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			UpdateNotifyIcon();
 		}
 		break;
+	case WM_NOTIFYICON:
+		switch (LOWORD(lParam))
+		{
 		case WM_LBUTTONUP:
 		case WM_RBUTTONUP:
 		case NIN_SELECT:
@@ -207,6 +210,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 1, 1, SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
 			g_unifiedFlyout.ShowAt(g_xamlCanvas);
+		}
+		break;
 		}
 		break;
 	case WM_APP + 10: // Device added
