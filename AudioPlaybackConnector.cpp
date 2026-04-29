@@ -88,6 +88,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	g_hInst = hInstance;
 
 	winrt::init_apartment();
+	LoadTranslateData();
+
+	// Always run as administrator to ensure registry and startup features work
+	if (!IsRunningAsAdmin())
+	{
+		wchar_t exePath[MAX_PATH];
+		GetModuleFileNameW(NULL, exePath, MAX_PATH);
+		if (reinterpret_cast<INT_PTR>(ShellExecuteW(NULL, L"runas", exePath, lpCmdLine, NULL, SW_SHOWNORMAL)) > 32)
+		{
+			return 0;
+		}
+	}
 
 	bool supported = false;
 	try
@@ -372,6 +384,20 @@ void SetupVolumeFlyout()
 
 void SetupMenu()
 {
+	MenuFlyoutItem infoItem;
+	infoItem.Text(_(L"Usage Instructions"));
+	FontIcon infoIcon;
+	infoIcon.Glyph(L"\xE946");
+	infoItem.Icon(infoIcon);
+	infoItem.Click([](const auto&, const auto&) {
+		TaskDialog(g_hWnd, g_hInst, _(L"Usage Instructions"), _(L"Tips for using AudioPlaybackConnector:"), 
+			_(L"1. Always run as administrator for all features to work.\n"
+			  "2. If no audio, try disconnecting and reconnecting Bluetooth from your phone.\n"
+			  "3. If volume sync is broken, use the 'Fix Volume Sync' option and REBOOT.\n"
+			  "4. Use 'Lock Phone Volume Buttons' to prevent phone buttons from changing PC volume."), 
+			TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
+	});
+
 	FontIcon settingsIcon;
 	settingsIcon.Glyph(L"\xE713");
 
@@ -462,6 +488,8 @@ void SetupMenu()
 	});
 
 	MenuFlyout menu;
+	menu.Items().Append(infoItem);
+	menu.Items().Append(MenuFlyoutSeparator());
 	menu.Items().Append(settingsItem);
 	menu.Items().Append(connectItem);
 	menu.Items().Append(MenuFlyoutSeparator());
