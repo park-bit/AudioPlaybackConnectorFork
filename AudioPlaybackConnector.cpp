@@ -376,13 +376,16 @@ void SetupMenu()
 		if (FAILED(hr)) return;
 
 		auto dpi = GetDpiForWindow(g_hWnd);
-		Point point = {
-			static_cast<float>(iconRect.left * USER_DEFAULT_SCREEN_DPI / dpi),
-			static_cast<float>(iconRect.top * USER_DEFAULT_SCREEN_DPI / dpi)
+		float scale = static_cast<float>(USER_DEFAULT_SCREEN_DPI) / dpi;
+		Rect rect = {
+			static_cast<float>(iconRect.left) * scale,
+			static_cast<float>(iconRect.top) * scale,
+			static_cast<float>(iconRect.right - iconRect.left) * scale,
+			static_cast<float>(iconRect.bottom - iconRect.top) * scale
 		};
 
 		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 0, 0, SWP_SHOWWINDOW);
-		g_devicePicker.Show(point);
+		g_devicePicker.Show(rect);
 	});
 
 	ToggleMenuFlyoutItem lockItem;
