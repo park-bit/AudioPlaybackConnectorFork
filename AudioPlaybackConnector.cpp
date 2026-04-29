@@ -582,7 +582,6 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, std::wstring_view devi
 	ConnectDevice(picker, device);
 }
 
-}
 
 void SetupSvgIcon()
 {
