@@ -449,7 +449,7 @@ void SetupMenu()
 		auto menuItems = sender.as<MenuFlyout>().Items();
 		if (menuItems.Size() > 0)
 		{
-			menuItems.GetAt(menuItems.Size() - 1).Focus(g_menuFocusState);
+			menuItems.GetAt(menuItems.Size() - 1).as<winrt::Windows::UI::Xaml::Controls::Control>().Focus(g_menuFocusState);
 		}
 		g_menuFocusState = FocusState::Unfocused;
 	});
