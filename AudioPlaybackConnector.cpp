@@ -207,13 +207,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (FAILED(hr)) break;
 
 			auto dpi = GetDpiForWindow(hWnd);
+			float dipW = static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
+			float dipH = static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
 
-			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
-			SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
+			// Place host window exactly over the tray icon so XAML coords match screen coords
+			SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, iconRect.right - iconRect.left, iconRect.bottom - iconRect.top, SWP_SHOWWINDOW | SWP_NOACTIVATE);
+			SetWindowPos(g_hWndXaml, 0, 0, 0, static_cast<int>(dipW), static_cast<int>(dipH), SWP_NOZORDER | SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
 
-			g_xamlCanvas.Width(static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI / dpi));
-			g_xamlCanvas.Height(static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi));
+			g_xamlCanvas.Width(dipW);
+			g_xamlCanvas.Height(dipH);
 
 			g_volumeFlyout.ShowAt(g_xamlCanvas);
 		}
@@ -228,17 +231,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (g_menuFocusState == FocusState::Unfocused)
 				g_menuFocusState = FocusState::Keyboard;
 
-			auto dpi = GetDpiForWindow(hWnd);
-			Point point = {
-				static_cast<float>(GET_X_LPARAM(lParam) * USER_DEFAULT_SCREEN_DPI / dpi),
-				static_cast<float>(GET_Y_LPARAM(lParam) * USER_DEFAULT_SCREEN_DPI / dpi)
-			};
+			// Get the tray icon rect so we can anchor the menu to it
+			RECT iconRect;
+			if (FAILED(Shell_NotifyIconGetRect(&g_niid, &iconRect)))
+			{
+				// Fall back to cursor position
+				GetCursorPos(reinterpret_cast<POINT*>(&iconRect));
+				iconRect.right = iconRect.left + 1;
+				iconRect.bottom = iconRect.top + 1;
+			}
 
-			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
-			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 1, 1, SWP_SHOWWINDOW);
+			auto dpi = GetDpiForWindow(hWnd);
+			float dipW = static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
+			float dipH = static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
+			if (dipW < 1.f) dipW = 1.f;
+			if (dipH < 1.f) dipH = 1.f;
+
+			// Host window must sit at the icon position; XAML coords are relative to it
+			SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, iconRect.right - iconRect.left, iconRect.bottom - iconRect.top, SWP_SHOWWINDOW | SWP_NOACTIVATE);
+			SetWindowPos(g_hWndXaml, 0, 0, 0, static_cast<int>(dipW), static_cast<int>(dipH), SWP_NOZORDER | SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
 
-			g_xamlMenu.ShowAt(g_xamlCanvas, point);
+			g_xamlCanvas.Width(dipW);
+			g_xamlCanvas.Height(dipH);
+
+			// Show menu at the top-left of the canvas; XAML will place it above/below based on available space
+			g_xamlMenu.ShowAt(g_xamlCanvas, Point{ 0.f, 0.f });
 		}
 		break;
 		}
@@ -373,18 +391,24 @@ void SetupMenu()
 	connectItem.Click([](const auto&, const auto&) {
 		RECT iconRect;
 		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
-		if (FAILED(hr)) return;
+		if (FAILED(hr))
+		{
+			// Fall back to cursor position
+			POINT pt;
+			GetCursorPos(&pt);
+			iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
+		}
 
-		auto dpi = GetDpiForWindow(g_hWnd);
-		float scale = static_cast<float>(USER_DEFAULT_SCREEN_DPI) / dpi;
+		// DevicePicker.Show() takes physical pixel coords (RECT in screen space), not DIPs
 		Rect rect = {
-			static_cast<float>(iconRect.left) * scale,
-			static_cast<float>(iconRect.top) * scale,
-			static_cast<float>(iconRect.right - iconRect.left) * scale,
-			static_cast<float>(iconRect.bottom - iconRect.top) * scale
+			static_cast<float>(iconRect.left),
+			static_cast<float>(iconRect.top),
+			static_cast<float>(iconRect.right - iconRect.left),
+			static_cast<float>(iconRect.bottom - iconRect.top)
 		};
 
-		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 0, 0, SWP_SHOWWINDOW);
+		// Make the host window visible so DevicePicker HWND owner is valid
+		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, iconRect.right - iconRect.left, iconRect.bottom - iconRect.top, SWP_SHOWWINDOW | SWP_NOACTIVATE);
 		g_devicePicker.Show(rect);
 	});
 
