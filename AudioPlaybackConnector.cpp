@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "AudioPlaybackConnector.h"
 #include <winrt/Windows.UI.Text.h>
+#include <winrt/Windows.UI.Popups.h>
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void SetupFlyout();
