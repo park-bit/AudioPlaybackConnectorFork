@@ -224,7 +224,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			// Place host window exactly over the tray icon so XAML coords match screen coords
 			SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
-			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
+			SetWindowPos(g_hWndXaml, 0, 0, 0, 1, 1, SWP_NOZORDER | SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
 
 			g_xamlCanvas.Width(1.f);
@@ -261,7 +261,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			// Host window must sit at the icon position; XAML coords are relative to it
 			SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
-			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
+			SetWindowPos(g_hWndXaml, 0, 0, 0, 1, 1, SWP_NOZORDER | SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
 
 			g_xamlCanvas.Width(1.f);
@@ -314,7 +314,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 		SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
 		SetForegroundWindow(hWnd);
-		g_devicePicker.Show(rect);
+		g_devicePicker.Show(rect, winrt::Windows::UI::Popups::Placement::Above);
 	}
 	break;
 	case WM_RESTORE_VOLUME:
@@ -360,6 +360,7 @@ void SetupFlyout()
 	stackPanel.Children().Append(button);
 
 	Flyout flyout;
+	flyout.Placement(winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::Top);
 	flyout.ShouldConstrainToRootBounds(false);
 	flyout.Content(stackPanel);
 	flyout.Closed([](const auto&, const auto&) {
@@ -391,6 +392,7 @@ void SetupVolumeFlyout()
 	stackPanel.Children().Append(slider);
 
 	Flyout flyout;
+	flyout.Placement(winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::Top);
 	flyout.ShouldConstrainToRootBounds(false);
 	flyout.Content(stackPanel);
 	flyout.Closed([](const auto&, const auto&) {
@@ -487,6 +489,7 @@ void SetupMenu()
 	});
 
 	MenuFlyout menu;
+	menu.Placement(winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::Top);
 	menu.ShouldConstrainToRootBounds(false);
 	menu.Items().Append(infoItem);
 	menu.Items().Append(MenuFlyoutSeparator());
