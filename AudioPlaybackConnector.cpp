@@ -238,7 +238,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
 			float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
 
-			g_volumeFlyout.ShowAt(g_xamlCanvas, Point{ dipX, dipY });
+			Rect rect = { dipX, dipY, 1.f, 1.f };
+			g_devicePicker.Show(rect, winrt::Windows::UI::Popups::Placement::Above);
 		}
 		break;
 		case WM_RBUTTONUP:
@@ -303,7 +304,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			g_lastDevices.clear();
 		}
 		break;
-	case WM_SHOW_DEVICE_PICKER:
+	case WM_SHOW_VOLUME_FLYOUT:
 	{
 		RECT iconRect;
 		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
@@ -321,13 +322,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		auto dpi = GetDpiForWindow(hWnd);
 
 		SetWindowPos(hWnd, HWND_TOPMOST, mi.rcMonitor.left, mi.rcMonitor.top, 1, 1, SWP_SHOWWINDOW);
+		SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
 		SetForegroundWindow(hWnd);
 
 		float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
 		float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
 
-		Rect rect = { dipX, dipY, 1.f, 1.f };
-		g_devicePicker.Show(rect, winrt::Windows::UI::Popups::Placement::Above);
+		g_volumeFlyout.ShowAt(g_xamlCanvas, Point{ dipX, dipY });
 	}
 	break;
 	case WM_RESTORE_VOLUME:
@@ -442,14 +443,14 @@ void SetupMenu()
 		winrt::Windows::System::Launcher::LaunchUriAsync(Uri(L"ms-settings:bluetooth"));
 	});
 
-	FontIcon connectIcon;
-	connectIcon.Glyph(L"\xE703");
+	FontIcon volumeIcon;
+	volumeIcon.Glyph(L"\xE767");
 
-	MenuFlyoutItem connectItem;
-	connectItem.Text(_(L"Connect Device"));
-	connectItem.Icon(connectIcon);
-	connectItem.Click([](const auto&, const auto&) {
-		PostMessageW(g_hWnd, WM_SHOW_DEVICE_PICKER, 0, 0);
+	MenuFlyoutItem volumeItem;
+	volumeItem.Text(_(L"Volume Control"));
+	volumeItem.Icon(volumeIcon);
+	volumeItem.Click([](const auto&, const auto&) {
+		PostMessageW(g_hWnd, WM_SHOW_VOLUME_FLYOUT, 0, 0);
 	});
 
 	ToggleMenuFlyoutItem lockItem;
@@ -514,7 +515,7 @@ void SetupMenu()
 	menu.Items().Append(infoItem);
 	menu.Items().Append(MenuFlyoutSeparator());
 	menu.Items().Append(settingsItem);
-	menu.Items().Append(connectItem);
+	menu.Items().Append(volumeItem);
 	menu.Items().Append(MenuFlyoutSeparator());
 	menu.Items().Append(lockItem);
 	menu.Items().Append(startupItem);
