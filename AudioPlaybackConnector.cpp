@@ -299,6 +299,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			g_lastDevices.clear();
 		}
 		break;
+	case WM_SHOW_DEVICE_PICKER:
+	{
+		RECT iconRect;
+		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
+		if (FAILED(hr))
+		{
+			POINT pt;
+			GetCursorPos(&pt);
+			iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
+		}
+
+		Rect rect = { 0.f, 0.f, 1.f, 1.f };
+
+		SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
+		SetForegroundWindow(hWnd);
+		g_devicePicker.Show(rect);
+	}
+	break;
 	case WM_RESTORE_VOLUME:
 		// Fired by the volume callback when a remote (phone) source changed the volume
 		if (g_volumeLock && g_endpointVolume)
@@ -416,25 +434,7 @@ void SetupMenu()
 	connectItem.Text(_(L"Connect Device"));
 	connectItem.Icon(connectIcon);
 	connectItem.Click([](const auto&, const auto&) {
-		RECT iconRect;
-		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
-		if (FAILED(hr))
-		{
-			POINT pt;
-			GetCursorPos(&pt);
-			iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
-		}
-
-		auto dpi = GetDpiForWindow(g_hWnd);
-		float scale = static_cast<float>(USER_DEFAULT_SCREEN_DPI) / dpi;
-
-		// DevicePicker.Show() takes DIPs relative to the window client area. 
-		// Since our window is 1x1 at the tray icon, {0,0} corresponds to the tray icon.
-		Rect rect = { 0.f, 0.f, 1.f, 1.f };
-
-		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
-		SetForegroundWindow(g_hWnd);
-		g_devicePicker.Show(rect);
+		PostMessageW(g_hWnd, WM_SHOW_DEVICE_PICKER, 0, 0);
 	});
 
 	ToggleMenuFlyoutItem lockItem;

@@ -14,6 +14,7 @@ namespace fs = std::filesystem;
 constexpr UINT WM_NOTIFYICON = WM_APP + 1;
 constexpr UINT WM_CONNECTDEVICE = WM_APP + 2;
 constexpr UINT WM_RESTORE_VOLUME = WM_APP + 3;
+constexpr UINT WM_SHOW_DEVICE_PICKER = WM_APP + 4;
 
 HINSTANCE g_hInst;
 HWND g_hWnd;
