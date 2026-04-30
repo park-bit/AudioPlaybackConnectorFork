@@ -223,22 +223,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
 			}
 
-			HMONITOR hMonitor = MonitorFromPoint(POINT{ iconRect.left, iconRect.top }, MONITOR_DEFAULTTONEAREST);
-			MONITORINFO mi = { sizeof(mi) };
-			GetMonitorInfoW(hMonitor, &mi);
+			// DevicePicker is a WinRT component that needs the host window to define its bounding box.
+			// It works perfectly if the host window covers the virtual screen but is HIDDEN.
+			int vX = GetSystemMetrics(SM_XVIRTUALSCREEN);
+			int vY = GetSystemMetrics(SM_YVIRTUALSCREEN);
+			int vW = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+			int vH = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 
 			auto dpi = GetDpiForWindow(hWnd);
-			
-			// Anchor host window to the top-left of the monitor so XAML isn't constrained by screen edges
-			SetWindowPos(hWnd, HWND_TOPMOST, mi.rcMonitor.left, mi.rcMonitor.top, 1, 1, SWP_SHOWWINDOW);
-			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
+
+			SetWindowPos(hWnd, HWND_TOPMOST, vX, vY, vW, vH, SWP_HIDEWINDOW);
 			SetForegroundWindow(hWnd);
 
-			// Calculate tray icon position relative to the monitor, converted to DIPs
-			float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
-			float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
+			// DevicePicker coordinates are relative to the client area of hWnd.
+			float dipX = static_cast<float>((iconRect.left - vX) * USER_DEFAULT_SCREEN_DPI) / dpi;
+			float dipY = static_cast<float>((iconRect.top - vY) * USER_DEFAULT_SCREEN_DPI) / dpi;
+			float dipW = static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
+			float dipH = static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
 
-			Rect rect = { dipX, dipY, 1.f, 1.f };
+			Rect rect = { dipX, dipY, dipW, dipH };
 			g_devicePicker.Show(rect, winrt::Windows::UI::Popups::Placement::Above);
 		}
 		break;
