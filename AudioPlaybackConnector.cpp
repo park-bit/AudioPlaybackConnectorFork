@@ -216,21 +216,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 			RECT iconRect;
 			auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
-			if (FAILED(hr)) break;
+			if (FAILED(hr))
+			{
+				POINT pt;
+				GetCursorPos(&pt);
+				iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
+			}
+
+			HMONITOR hMonitor = MonitorFromPoint(POINT{ iconRect.left, iconRect.top }, MONITOR_DEFAULTTONEAREST);
+			MONITORINFO mi = { sizeof(mi) };
+			GetMonitorInfoW(hMonitor, &mi);
 
 			auto dpi = GetDpiForWindow(hWnd);
-			float dipW = static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
-			float dipH = static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
-
-			// Place host window exactly over the tray icon so XAML coords match screen coords
-			SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
-			SetWindowPos(g_hWndXaml, 0, 0, 0, 1, 1, SWP_NOZORDER | SWP_SHOWWINDOW);
+			
+			// Anchor host window to the top-left of the monitor so XAML isn't constrained by screen edges
+			SetWindowPos(hWnd, HWND_TOPMOST, mi.rcMonitor.left, mi.rcMonitor.top, 1, 1, SWP_SHOWWINDOW);
+			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
 
-			g_xamlCanvas.Width(1.f);
-			g_xamlCanvas.Height(1.f);
+			// Calculate tray icon position relative to the monitor, converted to DIPs
+			float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
+			float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
 
-			g_volumeFlyout.ShowAt(g_xamlCanvas);
+			g_volumeFlyout.ShowAt(g_xamlCanvas, Point{ dipX, dipY });
 		}
 		break;
 		case WM_RBUTTONUP:
@@ -243,32 +251,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (g_menuFocusState == FocusState::Unfocused)
 				g_menuFocusState = FocusState::Keyboard;
 
-			// Get the tray icon rect so we can anchor the menu to it
 			RECT iconRect;
 			if (FAILED(Shell_NotifyIconGetRect(&g_niid, &iconRect)))
 			{
-				// Fall back to cursor position
-				GetCursorPos(reinterpret_cast<POINT*>(&iconRect));
-				iconRect.right = iconRect.left + 1;
-				iconRect.bottom = iconRect.top + 1;
+				POINT pt;
+				GetCursorPos(&pt);
+				iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
 			}
 
-			auto dpi = GetDpiForWindow(hWnd);
-			float dipW = static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
-			float dipH = static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
-			if (dipW < 1.f) dipW = 1.f;
-			if (dipH < 1.f) dipH = 1.f;
+			HMONITOR hMonitor = MonitorFromPoint(POINT{ iconRect.left, iconRect.top }, MONITOR_DEFAULTTONEAREST);
+			MONITORINFO mi = { sizeof(mi) };
+			GetMonitorInfoW(hMonitor, &mi);
 
-			// Host window must sit at the icon position; XAML coords are relative to it
-			SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
-			SetWindowPos(g_hWndXaml, 0, 0, 0, 1, 1, SWP_NOZORDER | SWP_SHOWWINDOW);
+			auto dpi = GetDpiForWindow(hWnd);
+			
+			SetWindowPos(hWnd, HWND_TOPMOST, mi.rcMonitor.left, mi.rcMonitor.top, 1, 1, SWP_SHOWWINDOW);
+			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
 
-			g_xamlCanvas.Width(1.f);
-			g_xamlCanvas.Height(1.f);
+			float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
+			float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
 
-			// Show menu at the top-left of the canvas; XAML will place it above/below based on available space
-			g_xamlMenu.ShowAt(g_xamlCanvas, Point{ 0.f, 0.f });
+			g_xamlMenu.ShowAt(g_xamlCanvas, Point{ dipX, dipY });
 		}
 		break;
 		}
@@ -310,10 +314,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
 		}
 
-		Rect rect = { 0.f, 0.f, 1.f, 1.f };
+		HMONITOR hMonitor = MonitorFromPoint(POINT{ iconRect.left, iconRect.top }, MONITOR_DEFAULTTONEAREST);
+		MONITORINFO mi = { sizeof(mi) };
+		GetMonitorInfoW(hMonitor, &mi);
 
-		SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
+		auto dpi = GetDpiForWindow(hWnd);
+
+		SetWindowPos(hWnd, HWND_TOPMOST, mi.rcMonitor.left, mi.rcMonitor.top, 1, 1, SWP_SHOWWINDOW);
 		SetForegroundWindow(hWnd);
+
+		float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
+		float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
+
+		Rect rect = { dipX, dipY, 1.f, 1.f };
 		g_devicePicker.Show(rect, winrt::Windows::UI::Popups::Placement::Above);
 	}
 	break;
@@ -481,11 +494,18 @@ void SetupMenu()
 		RECT iconRect;
 		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
 		if (FAILED(hr)) return;
+
+		HMONITOR hMonitor = MonitorFromPoint(POINT{ iconRect.left, iconRect.top }, MONITOR_DEFAULTTONEAREST);
+		MONITORINFO mi = { sizeof(mi) };
+		GetMonitorInfoW(hMonitor, &mi);
+
 		auto dpi = GetDpiForWindow(g_hWnd);
-		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
-		g_xamlCanvas.Width(1.f);
-		g_xamlCanvas.Height(1.f);
-		g_xamlFlyout.ShowAt(g_xamlCanvas);
+		SetWindowPos(g_hWnd, HWND_TOPMOST, mi.rcMonitor.left, mi.rcMonitor.top, 1, 1, SWP_SHOWWINDOW);
+		
+		float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
+		float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
+
+		g_xamlFlyout.ShowAt(g_xamlCanvas, Point{ dipX, dipY });
 	});
 
 	MenuFlyout menu;
