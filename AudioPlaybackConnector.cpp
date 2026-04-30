@@ -223,12 +223,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			float dipH = static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
 
 			// Place host window exactly over the tray icon so XAML coords match screen coords
-			SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, iconRect.right - iconRect.left, iconRect.bottom - iconRect.top, SWP_SHOWWINDOW | SWP_NOACTIVATE);
-			SetWindowPos(g_hWndXaml, 0, 0, 0, static_cast<int>(dipW), static_cast<int>(dipH), SWP_NOZORDER | SWP_SHOWWINDOW);
+			SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
+			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
 
-			g_xamlCanvas.Width(dipW);
-			g_xamlCanvas.Height(dipH);
+			g_xamlCanvas.Width(1.f);
+			g_xamlCanvas.Height(1.f);
 
 			g_volumeFlyout.ShowAt(g_xamlCanvas);
 		}
@@ -260,12 +260,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (dipH < 1.f) dipH = 1.f;
 
 			// Host window must sit at the icon position; XAML coords are relative to it
-			SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, iconRect.right - iconRect.left, iconRect.bottom - iconRect.top, SWP_SHOWWINDOW | SWP_NOACTIVATE);
-			SetWindowPos(g_hWndXaml, 0, 0, 0, static_cast<int>(dipW), static_cast<int>(dipH), SWP_NOZORDER | SWP_SHOWWINDOW);
+			SetWindowPos(hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
+			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
 
-			g_xamlCanvas.Width(dipW);
-			g_xamlCanvas.Height(dipH);
+			g_xamlCanvas.Width(1.f);
+			g_xamlCanvas.Height(1.f);
 
 			// Show menu at the top-left of the canvas; XAML will place it above/below based on available space
 			g_xamlMenu.ShowAt(g_xamlCanvas, Point{ 0.f, 0.f });
@@ -342,6 +342,7 @@ void SetupFlyout()
 	stackPanel.Children().Append(button);
 
 	Flyout flyout;
+	flyout.ShouldConstrainToRootBounds(false);
 	flyout.Content(stackPanel);
 	flyout.Closed([](const auto&, const auto&) {
 		ShowWindow(g_hWnd, SW_HIDE);
@@ -427,15 +428,11 @@ void SetupMenu()
 		auto dpi = GetDpiForWindow(g_hWnd);
 		float scale = static_cast<float>(USER_DEFAULT_SCREEN_DPI) / dpi;
 
-		// DevicePicker.Show() takes DIPs, not physical pixels
-		Rect rect = {
-			static_cast<float>(iconRect.left) * scale,
-			static_cast<float>(iconRect.top) * scale,
-			static_cast<float>(iconRect.right - iconRect.left) * scale,
-			static_cast<float>(iconRect.bottom - iconRect.top) * scale
-		};
+		// DevicePicker.Show() takes DIPs relative to the window client area. 
+		// Since our window is 1x1 at the tray icon, {0,0} corresponds to the tray icon.
+		Rect rect = { 0.f, 0.f, 1.f, 1.f };
 
-		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, iconRect.right - iconRect.left, iconRect.bottom - iconRect.top, SWP_SHOWWINDOW);
+		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
 		SetForegroundWindow(g_hWnd);
 		g_devicePicker.Show(rect);
 	});
@@ -483,13 +480,14 @@ void SetupMenu()
 		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
 		if (FAILED(hr)) return;
 		auto dpi = GetDpiForWindow(g_hWnd);
-		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 0, 0, SWP_HIDEWINDOW);
-		g_xamlCanvas.Width(static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI / dpi));
-		g_xamlCanvas.Height(static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi));
+		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 1, 1, SWP_SHOWWINDOW);
+		g_xamlCanvas.Width(1.f);
+		g_xamlCanvas.Height(1.f);
 		g_xamlFlyout.ShowAt(g_xamlCanvas);
 	});
 
 	MenuFlyout menu;
+	menu.ShouldConstrainToRootBounds(false);
 	menu.Items().Append(infoItem);
 	menu.Items().Append(MenuFlyoutSeparator());
 	menu.Items().Append(settingsItem);
