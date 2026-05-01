@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity
-    version="1.0.0.0"
+    version="2.0.5.0"
     processorArchitecture="*"
-    name="com.ysc3839.audioplaybackconnector"
+    name="com.parkbit.audioplaybackconnector"
     type="win32"
   />
-  <description>AudioPlaybackConnector</description>
+  <description>AudioPlaybackConnector - Connect mobile audio to PC</description>
   <dependency>
     <dependentAssembly>
       <assemblyIdentity
@@ -19,11 +19,15 @@
       />
     </dependentAssembly>
   </dependency>
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
-      <!-- Windows 10 2004 -->
-      <!-- See https://docs.microsoft.com/en-us/windows/apps/desktop/modernize/xaml-islands -->
-      <!-- "maxversiontested" is CASE SENSITIVE. Do not change this.-->
       <maxversiontested Id="10.0.19041.0"/>
       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
     </application>
