@@ -211,7 +211,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_NOTIFYICON:
 		switch (LOWORD(lParam))
 		{
-		case WM_LBUTTONUP:
 		case NIN_SELECT:
 		case NIN_KEYSELECT:
 		{
@@ -248,9 +247,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (g_menuFocusState == FocusState::Unfocused)
 				g_menuFocusState = FocusState::Keyboard;
 
-			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
+			auto dpi = GetDpiForWindow(hWnd);
+			Point point = {
+				static_cast<float>(GET_X_LPARAM(wParam) * USER_DEFAULT_SCREEN_DPI / dpi),
+				static_cast<float>(GET_Y_LPARAM(wParam) * USER_DEFAULT_SCREEN_DPI / dpi)
+			};
+
+			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
+			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 1, 1, SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
-			g_xamlMenu.ShowAt(g_xamlCanvas);
+
+			g_xamlMenu.ShowAt(g_xamlCanvas, point);
 		}
 		break;
 		}
@@ -283,9 +290,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_SHOW_VOLUME_FLYOUT:
 	{
-		SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
+		RECT iconRect;
+		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
+		if (FAILED(hr))
+		{
+			POINT pt;
+			GetCursorPos(&pt);
+			iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
+		}
+
+		auto dpi = GetDpiForWindow(hWnd);
+		float dipX = static_cast<float>(iconRect.left * USER_DEFAULT_SCREEN_DPI / dpi);
+		float dipY = static_cast<float>(iconRect.top * USER_DEFAULT_SCREEN_DPI / dpi);
+
+		SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
+		SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 1, 1, SWP_SHOWWINDOW);
 		SetForegroundWindow(hWnd);
-		g_volumeFlyout.ShowAt(g_xamlCanvas);
+
+		winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutShowOptions opts;
+		opts.Position(winrt::Windows::Foundation::Point{ dipX, dipY });
+		g_volumeFlyout.ShowAt(g_xamlCanvas, opts);
 	}
 	break;
 	case WM_RESTORE_VOLUME:
