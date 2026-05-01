@@ -277,7 +277,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
 			float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
 
-			g_xamlMenu.ShowAt(g_xamlCanvas, Point{ dipX, dipY });
+			g_xamlMenu.ShowAt(g_xamlCanvas, [&]{ winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutShowOptions opts; opts.Position(winrt::Windows::Foundation::Point{ dipX, dipY }); return opts; }());
 		}
 		break;
 		}
@@ -332,7 +332,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
 		float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
 
-		g_volumeFlyout.ShowAt(g_xamlCanvas, Point{ dipX, dipY });
+		g_volumeFlyout.ShowAt(g_xamlCanvas, [&]{ winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutShowOptions opts; opts.Position(winrt::Windows::Foundation::Point{ dipX, dipY }); return opts; }());
 	}
 	break;
 	case WM_RESTORE_VOLUME:
@@ -510,7 +510,7 @@ void SetupMenu()
 		float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
 		float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
 
-		g_xamlFlyout.ShowAt(g_xamlCanvas, Point{ dipX, dipY });
+		g_xamlFlyout.ShowAt(g_xamlCanvas, [&]{ winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutShowOptions opts; opts.Position(winrt::Windows::Foundation::Point{ dipX, dipY }); return opts; }());
 	});
 
 	MenuFlyout menu;
