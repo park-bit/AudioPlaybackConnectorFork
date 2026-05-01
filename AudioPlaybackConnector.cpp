@@ -206,11 +206,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			using namespace winrt::Windows::UI::Popups;
 
 			RECT iconRect;
-			auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
-			if (FAILED(hr))
+			if (FAILED(Shell_NotifyIconGetRect(&g_niid, &iconRect)))
 			{
-				LOG_HR(hr);
-				break;
+				// Fallback: use cursor position if icon rect unavailable
+				POINT pt;
+				GetCursorPos(&pt);
+				iconRect = { pt.x - 8, pt.y - 8, pt.x + 8, pt.y + 8 };
 			}
 
 			auto dpi = GetDpiForWindow(hWnd);
