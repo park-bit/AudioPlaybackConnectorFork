@@ -1,24 +1,18 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "AudioPlaybackConnector.h"
-#include <winrt/Windows.UI.Text.h>
-#include <winrt/Windows.UI.Popups.h>
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void SetupFlyout();
 void SetupVolumeFlyout();
 void SetupMenu();
-void UpdateNotifyIcon();
-void DisableAbsoluteVolume();
-void RevertAbsoluteVolume();
-void SetRunAtStartup(bool enable);
 void UpdateVolume();
 void SetupEndpointVolume();
 void TeardownEndpointVolume();
-void SetupSvgIcon();
-bool IsRunningAsAdmin();
+void DisableAbsoluteVolume();
+winrt::fire_and_forget ConnectDevice(DevicePicker, std::wstring_view);
 void SetupDevicePicker();
-winrt::fire_and_forget ConnectDevice(DevicePicker picker, std::wstring_view deviceId);
-winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation device);
+void SetupSvgIcon();
+void UpdateNotifyIcon();
 
 // Audio session management globals and helpers
 static IAudioSessionManager2* g_sessionManager = nullptr;
@@ -89,18 +83,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	g_hInst = hInstance;
 
 	winrt::init_apartment();
-	LoadTranslateData();
-
-	// Always run as administrator to ensure registry and startup features work
-	if (!IsRunningAsAdmin())
-	{
-		wchar_t exePath[MAX_PATH];
-		GetModuleFileNameW(NULL, exePath, MAX_PATH);
-		if (reinterpret_cast<INT_PTR>(ShellExecuteW(NULL, L"runas", exePath, lpCmdLine, NULL, SW_SHOWNORMAL)) > 32)
-		{
-			return 0;
-		}
-	}
 
 	bool supported = false;
 	try
@@ -237,11 +219,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			g_devicePicker.Show(rect, Placement::Above);
 		}
 		break;
-		case WM_RBUTTONUP:
-		{
+		case WM_RBUTTONUP: // Menu activated by mouse click
 			g_menuFocusState = FocusState::Pointer;
 			break;
-		}
 		case WM_CONTEXTMENU:
 		{
 			if (g_menuFocusState == FocusState::Unfocused)
@@ -254,7 +234,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			};
 
 			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
-			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 1, 1, SWP_SHOWWINDOW);
+			SetWindowPos(g_hWnd, HWND_TOPMOST, 0, 0, 1, 1, SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
 
 			g_xamlMenu.ShowAt(g_xamlCanvas, point);
@@ -262,22 +242,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 		}
 		break;
-	case WM_APP + 10: // Device added
-	{
-		auto idString = reinterpret_cast<std::wstring*>(wParam);
-		
-		// Run async task to get device info and append to list
-		auto deviceId = *idString;
-		auto AddDeviceAsync = [](std::wstring id) -> winrt::Windows::Foundation::IAsyncAction
-		{
-			auto device = co_await DeviceInformation::CreateFromIdAsync(id);
-			g_devices.Append(device);
-		};
-		AddDeviceAsync(deviceId);
-		
-		delete idString;
-	}
-	break;
 	case WM_CONNECTDEVICE:
 		if (g_reconnect)
 		{
@@ -288,30 +252,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			g_lastDevices.clear();
 		}
 		break;
-	case WM_SHOW_VOLUME_FLYOUT:
-	{
-		RECT iconRect;
-		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
-		if (FAILED(hr))
-		{
-			POINT pt;
-			GetCursorPos(&pt);
-			iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
-		}
-
-		auto dpi = GetDpiForWindow(hWnd);
-		float dipX = static_cast<float>(iconRect.left * USER_DEFAULT_SCREEN_DPI / dpi);
-		float dipY = static_cast<float>(iconRect.top * USER_DEFAULT_SCREEN_DPI / dpi);
-
-		SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
-		SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 1, 1, SWP_SHOWWINDOW);
-		SetForegroundWindow(hWnd);
-
-		winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutShowOptions opts;
-		opts.Position(winrt::Windows::Foundation::Point{ dipX, dipY });
-		g_volumeFlyout.ShowAt(g_xamlCanvas, opts);
-	}
-	break;
 	case WM_RESTORE_VOLUME:
 		// Fired by the volume callback when a remote (phone) source changed the volume
 		if (g_volumeLock && g_endpointVolume)
@@ -355,13 +295,8 @@ void SetupFlyout()
 	stackPanel.Children().Append(button);
 
 	Flyout flyout;
-	flyout.Placement(winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::Top);
 	flyout.ShouldConstrainToRootBounds(false);
 	flyout.Content(stackPanel);
-	flyout.Closed([](const auto&, const auto&) {
-		ShowWindow(g_hWnd, SW_HIDE);
-		SaveSettings();
-	});
 
 	g_xamlFlyout = flyout;
 }
@@ -387,7 +322,6 @@ void SetupVolumeFlyout()
 	stackPanel.Children().Append(slider);
 
 	Flyout flyout;
-	flyout.Placement(winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::Top);
 	flyout.ShouldConstrainToRootBounds(false);
 	flyout.Content(stackPanel);
 	flyout.Closed([](const auto&, const auto&) {
@@ -400,20 +334,7 @@ void SetupVolumeFlyout()
 
 void SetupMenu()
 {
-	MenuFlyoutItem infoItem;
-	infoItem.Text(_(L"Usage Instructions"));
-	FontIcon infoIcon;
-	infoIcon.Glyph(L"\xE946");
-	infoItem.Icon(infoIcon);
-	infoItem.Click([](const auto&, const auto&) {
-		TaskDialog(g_hWnd, g_hInst, _(L"Usage Instructions"), _(L"Tips for using AudioPlaybackConnector:"), 
-			_(L"1. Always run as administrator for all features to work.\n"
-			  "2. If no audio, try disconnecting and reconnecting Bluetooth from your phone.\n"
-			  "3. If volume sync is broken, use the 'Fix Volume Sync' option and REBOOT.\n"
-			  "4. Use 'Lock Phone Volume Buttons' to prevent phone buttons from changing PC volume."), 
-			TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
-	});
-
+	// https://docs.microsoft.com/en-us/windows/uwp/design/style/segoe-ui-symbol-font
 	FontIcon settingsIcon;
 	settingsIcon.Glyph(L"\xE713");
 
@@ -424,6 +345,18 @@ void SetupMenu()
 		winrt::Windows::System::Launcher::LaunchUriAsync(Uri(L"ms-settings:bluetooth"));
 	});
 
+	// Lock toggle: blocks phone volume buttons from changing PC volume
+	static ToggleMenuFlyoutItem lockItem;
+	lockItem.Text(_(L"Lock Phone Volume Buttons"));
+	lockItem.IsChecked(g_volumeLock);
+	lockItem.Click([](const auto&, const auto&) {
+		g_volumeLock = lockItem.IsChecked();
+		// When enabling, immediately restore our preferred master volume level
+		if (g_volumeLock && g_endpointVolume)
+			g_endpointVolume->SetMasterVolumeLevelScalar(g_lastMasterVolume, &g_ourVolumeGuid);
+		SaveSettings();
+	});
+
 	FontIcon volumeIcon;
 	volumeIcon.Glyph(L"\xE767");
 
@@ -431,35 +364,22 @@ void SetupMenu()
 	volumeItem.Text(_(L"Volume Control"));
 	volumeItem.Icon(volumeIcon);
 	volumeItem.Click([](const auto&, const auto&) {
-		PostMessageW(g_hWnd, WM_SHOW_VOLUME_FLYOUT, 0, 0);
+		RECT iconRect;
+		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
+		if (FAILED(hr))
+		{
+			LOG_HR(hr);
+			return;
+		}
+
+		auto dpi = GetDpiForWindow(g_hWnd);
+
+		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 0, 0, SWP_HIDEWINDOW);
+		g_xamlCanvas.Width(static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI / dpi));
+		g_xamlCanvas.Height(static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi));
+
+		g_volumeFlyout.ShowAt(g_xamlCanvas);
 	});
-
-	ToggleMenuFlyoutItem lockItem;
-	lockItem.Text(_(L"Lock Phone Volume Buttons"));
-	lockItem.IsChecked(g_volumeLock);
-	lockItem.Click([](const auto& sender, const auto&) {
-		g_volumeLock = sender.as<ToggleMenuFlyoutItem>().IsChecked();
-		if (g_volumeLock && g_endpointVolume)
-			g_endpointVolume->SetMasterVolumeLevelScalar(g_lastMasterVolume, &g_ourVolumeGuid);
-		SaveSettings();
-	});
-
-	ToggleMenuFlyoutItem startupItem;
-	startupItem.Text(_(L"Run at Windows Startup"));
-	startupItem.IsChecked(g_runAtStartup);
-	startupItem.Click([](const auto& sender, const auto&) {
-		g_runAtStartup = sender.as<ToggleMenuFlyoutItem>().IsChecked();
-		SetRunAtStartup(g_runAtStartup);
-		SaveSettings();
-	});
-
-	MenuFlyoutItem fixItem;
-	fixItem.Text(_(L"Fix Volume Sync (Absolute Volume)"));
-	fixItem.Click([](const auto&, const auto&) { DisableAbsoluteVolume(); });
-
-	MenuFlyoutItem revertItem;
-	revertItem.Text(_(L"Revert Volume Fix"));
-	revertItem.Click([](const auto&, const auto&) { RevertAbsoluteVolume(); });
 
 	FontIcon closeIcon;
 	closeIcon.Glyph(L"\xE8BB");
@@ -473,35 +393,38 @@ void SetupMenu()
 			PostMessageW(g_hWnd, WM_CLOSE, 0, 0);
 			return;
 		}
-		SetWindowPos(g_hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
-		SetForegroundWindow(g_hWnd);
+
+		RECT iconRect;
+		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
+		if (FAILED(hr))
+		{
+			LOG_HR(hr);
+			return;
+		}
+
+		auto dpi = GetDpiForWindow(g_hWnd);
+
+		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 0, 0, SWP_HIDEWINDOW);
+		g_xamlCanvas.Width(static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI / dpi));
+		g_xamlCanvas.Height(static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi));
+
 		g_xamlFlyout.ShowAt(g_xamlCanvas);
 	});
 
 	MenuFlyout menu;
-	menu.Placement(winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::Top);
-	menu.ShouldConstrainToRootBounds(false);
-	menu.Items().Append(infoItem);
-	menu.Items().Append(MenuFlyoutSeparator());
 	menu.Items().Append(settingsItem);
-	menu.Items().Append(volumeItem);
-	menu.Items().Append(MenuFlyoutSeparator());
 	menu.Items().Append(lockItem);
-	menu.Items().Append(startupItem);
-	menu.Items().Append(fixItem);
-	menu.Items().Append(revertItem);
-	menu.Items().Append(MenuFlyoutSeparator());
+	menu.Items().Append(volumeItem);
 	menu.Items().Append(exitItem);
-
 	menu.Opened([](const auto& sender, const auto&) {
 		auto menuItems = sender.as<MenuFlyout>().Items();
-		if (menuItems.Size() > 0)
+		auto itemsCount = menuItems.Size();
+		if (itemsCount > 0)
 		{
-			menuItems.GetAt(menuItems.Size() - 1).as<winrt::Windows::UI::Xaml::Controls::Control>().Focus(g_menuFocusState);
+			menuItems.GetAt(itemsCount - 1).Focus(g_menuFocusState);
 		}
 		g_menuFocusState = FocusState::Unfocused;
 	});
-
 	menu.Closed([](const auto&, const auto&) {
 		ShowWindow(g_hWnd, SW_HIDE);
 	});
@@ -509,33 +432,9 @@ void SetupMenu()
 	g_xamlMenu = menu;
 }
 
-void SetupDevicePicker()
-{
-	g_devicePicker = DevicePicker();
-	winrt::check_hresult(g_devicePicker.as<IInitializeWithWindow>()->Initialize(g_hWnd));
-
-	g_devicePicker.Filter().SupportedDeviceSelectors().Append(AudioPlaybackConnection::GetDeviceSelector());
-	g_devicePicker.DevicePickerDismissed([](const auto&, const auto&) {
-		SetWindowPos(g_hWnd, nullptr, 0, 0, 0, 0, SWP_NOZORDER | SWP_HIDEWINDOW);
-	});
-	g_devicePicker.DeviceSelected([](const auto&, const auto& args) {
-		ConnectDevice(g_devicePicker, args.SelectedDevice());
-	});
-	g_devicePicker.DisconnectButtonClicked([](const auto& sender, const auto& args) {
-		auto device = args.Device();
-		auto it = g_audioPlaybackConnections.find(std::wstring(device.Id()));
-		if (it != g_audioPlaybackConnections.end())
-		{
-			it->second.second.Close();
-			g_audioPlaybackConnections.erase(it);
-		}
-		sender.SetDisplayStatus(device, {}, DevicePickerDisplayStatusOptions::None);
-	});
-}
-
 winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation device)
 {
-	if (picker) picker.SetDisplayStatus(device, _(L"Connecting"), DevicePickerDisplayStatusOptions::ShowProgress | DevicePickerDisplayStatusOptions::ShowDisconnectButton);
+	picker.SetDisplayStatus(device, _(L"Connecting"), DevicePickerDisplayStatusOptions::ShowProgress | DevicePickerDisplayStatusOptions::ShowDisconnectButton);
 
 	bool success = false;
 	std::wstring errorMessage;
@@ -553,7 +452,7 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 					auto it = g_audioPlaybackConnections.find(std::wstring(sender.DeviceId()));
 					if (it != g_audioPlaybackConnections.end())
 					{
-						if (g_devicePicker) g_devicePicker.SetDisplayStatus(it->second.first, {}, DevicePickerDisplayStatusOptions::None);
+						g_devicePicker.SetDisplayStatus(it->second.first, {}, DevicePickerDisplayStatusOptions::None);
 						g_audioPlaybackConnections.erase(it);
 					}
 					sender.Close();
@@ -610,7 +509,7 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 
 	if (success)
 	{
-		if (picker) picker.SetDisplayStatus(device, _(L"Connected"), DevicePickerDisplayStatusOptions::ShowDisconnectButton);
+		picker.SetDisplayStatus(device, _(L"Connected"), DevicePickerDisplayStatusOptions::ShowDisconnectButton);
 	}
 	else
 	{
@@ -620,7 +519,7 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 			it->second.second.Close();
 			g_audioPlaybackConnections.erase(it);
 		}
-		if (picker) picker.SetDisplayStatus(device, errorMessage, DevicePickerDisplayStatusOptions::ShowRetryButton);
+		picker.SetDisplayStatus(device, errorMessage, DevicePickerDisplayStatusOptions::ShowRetryButton);
 	}
 }
 
@@ -630,6 +529,29 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, std::wstring_view devi
 	ConnectDevice(picker, device);
 }
 
+void SetupDevicePicker()
+{
+	g_devicePicker = DevicePicker();
+	winrt::check_hresult(g_devicePicker.as<IInitializeWithWindow>()->Initialize(g_hWnd));
+
+	g_devicePicker.Filter().SupportedDeviceSelectors().Append(AudioPlaybackConnection::GetDeviceSelector());
+	g_devicePicker.DevicePickerDismissed([](const auto&, const auto&) {
+		SetWindowPos(g_hWnd, nullptr, 0, 0, 0, 0, SWP_NOZORDER | SWP_HIDEWINDOW);
+	});
+	g_devicePicker.DeviceSelected([](const auto& sender, const auto& args) {
+		ConnectDevice(sender, args.SelectedDevice());
+	});
+	g_devicePicker.DisconnectButtonClicked([](const auto& sender, const auto& args) {
+		auto device = args.Device();
+		auto it = g_audioPlaybackConnections.find(std::wstring(device.Id()));
+		if (it != g_audioPlaybackConnections.end())
+		{
+			it->second.second.Close();
+			g_audioPlaybackConnections.erase(it);
+		}
+		sender.SetDisplayStatus(device, {}, DevicePickerDisplayStatusOptions::None);
+	});
+}
 
 void SetupSvgIcon()
 {
@@ -902,7 +824,7 @@ void UpdateVolume()
 		ApplyVolumeToOurSessions(g_sessionManager);
 }
 
-bool IsRunningAsAdmin()
+static bool IsRunningAsAdmin()
 {
 	BOOL isAdmin = FALSE;
 	HANDLE token = NULL;
@@ -919,11 +841,16 @@ bool IsRunningAsAdmin()
 
 void DisableAbsoluteVolume()
 {
+	// If not admin, relaunch with UAC elevation
 	if (!IsRunningAsAdmin())
 	{
 		wchar_t exePath[MAX_PATH];
 		GetModuleFileNameW(NULL, exePath, MAX_PATH);
-		ShellExecuteW(g_hWnd, L"runas", exePath, L"--fix-absolute-volume", NULL, SW_SHOWNORMAL);
+		HINSTANCE result = ShellExecuteW(g_hWnd, L"runas", exePath, L"--fix-absolute-volume", NULL, SW_SHOWNORMAL);
+		if (reinterpret_cast<INT_PTR>(result) <= 32)
+		{
+			TaskDialog(g_hWnd, NULL, _(L"Cancelled"), _(L"Administrator privileges are required to apply the system fix.\nPlease try again and click Yes on the UAC prompt."), NULL, TDCBF_OK_BUTTON, TD_WARNING_ICON, NULL);
+		}
 		return;
 	}
 
@@ -952,61 +879,10 @@ void DisableAbsoluteVolume()
 
 	if (success)
 	{
-		TaskDialog(g_hWnd, NULL, _(L"System Fix Applied"), _(L"Registry paths for Absolute Volume have been updated.\n\nYou MUST REBOOT your laptop now for this to take effect."), NULL, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
+		TaskDialog(g_hWnd, NULL, _(L"System Fix Applied DEFINITIVELY"), _(L"All known registry paths for Absolute Volume have been updated.\n\nCRITICAL: You MUST REBOOT your laptop now for this to take effect.\n\nIf volume buttons still sync after reboot, it means your Bluetooth driver is ignoring system settings."), NULL, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
 	}
-}
-
-void RevertAbsoluteVolume()
-{
-	if (!IsRunningAsAdmin())
+	else
 	{
-		TaskDialog(g_hWnd, NULL, _(L"Admin Required"), _(L"Please run the app as Administrator to revert registry changes."), NULL, TDCBF_OK_BUTTON, TD_WARNING_ICON, NULL);
-		return;
-	}
-
-	const wchar_t* paths[] = {
-		L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT",
-		L"SYSTEM\\ControlSet001\\Control\\Bluetooth\\Audio\\AVRCP\\CT",
-		L"SYSTEM\\CurrentControlSet\\Services\\HidBth\\Parameters",
-		L"SYSTEM\\CurrentControlSet\\Services\\BthAvrcpTg\\Parameters",
-		L"SOFTWARE\\Microsoft\\Bluetooth\\Audio\\AVRCP\\CT"
-	};
-
-	bool success = false;
-	for (auto path : paths)
-	{
-		HKEY hKey;
-		if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, path, 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS)
-		{
-			DWORD val0 = 0;
-			RegSetValueExW(hKey, L"DisableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&val0, sizeof(val0));
-			RegSetValueExW(hKey, L"EnableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&val0, sizeof(val0));
-			RegCloseKey(hKey);
-			success = true;
-		}
-	}
-
-	if (success)
-	{
-		TaskDialog(g_hWnd, NULL, _(L"Fix Reverted"), _(L"Absolute Volume sync has been restored to default.\n\nYou MUST REBOOT for this to take effect."), NULL, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
-	}
-}
-
-void SetRunAtStartup(bool enable)
-{
-	HKEY hKey;
-	if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS)
-	{
-		if (enable)
-		{
-			wchar_t exePath[MAX_PATH];
-			GetModuleFileNameW(NULL, exePath, MAX_PATH);
-			RegSetValueExW(hKey, L"AudioPlaybackConnector", 0, REG_SZ, (const BYTE*)exePath, static_cast<DWORD>((wcslen(exePath) + 1) * sizeof(wchar_t)));
-		}
-		else
-		{
-			RegDeleteValueW(hKey, L"AudioPlaybackConnector");
-		}
-		RegCloseKey(hKey);
+		TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to write registry values."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
 	}
 }

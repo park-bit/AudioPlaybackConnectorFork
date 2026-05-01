@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "resource.h"
 
@@ -14,7 +14,6 @@ namespace fs = std::filesystem;
 constexpr UINT WM_NOTIFYICON = WM_APP + 1;
 constexpr UINT WM_CONNECTDEVICE = WM_APP + 2;
 constexpr UINT WM_RESTORE_VOLUME = WM_APP + 3;
-constexpr UINT WM_SHOW_VOLUME_FLYOUT = WM_APP + 4;
 
 HINSTANCE g_hInst;
 HWND g_hWnd;
@@ -40,13 +39,11 @@ NOTIFYICONIDENTIFIER g_niid = {
 UINT WM_TASKBAR_CREATED = 0;
 bool g_reconnect = false;
 std::vector<std::wstring> g_lastDevices;
-double g_volume = 0.1;
+double g_volume = 0.2;
 bool g_volumeLock = true;
-bool g_runAtStartup = false;
 float g_lastMasterVolume = 0.5f;
 bool g_lastMute = false;
 IAudioEndpointVolume* g_endpointVolume = nullptr;
-winrt::Windows::Foundation::Collections::IObservableVector<winrt::Windows::Devices::Enumeration::DeviceInformation> g_devices = winrt::single_threaded_observable_vector<DeviceInformation>();
 // GUID used to tag our own volume changes so the callback ignores them
 static const GUID g_ourVolumeGuid = { 0x9a4b2d1c, 0x3e5f, 0x4a6b, { 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0xa7, 0xb8, 0xc9 } };
 
