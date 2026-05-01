@@ -191,13 +191,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case WM_NOTIFYICON:
-	{
-		// DEBUG: show notification code - REMOVE AFTER TESTING
-		wchar_t dbg[128];
-		swprintf_s(dbg, L"WM_NOTIFYICON\nLOWORD(lParam)=0x%04X\nNIN_SELECT=0x%04X\nWM_LBUTTONUP=0x%04X",
-			LOWORD(lParam), NIN_SELECT, WM_LBUTTONUP);
-		MessageBoxW(nullptr, dbg, L"Tray Debug", MB_OK | MB_SYSTEMMODAL);
-	}
 		switch (LOWORD(lParam))
 		{
 		case WM_LBUTTONUP:
@@ -230,7 +223,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			};
 
 			// Show the window (transparent, so invisible) - DevicePicker needs a visible parent window
-			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_SHOWWINDOW);
+			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
 			SetForegroundWindow(hWnd);
 			try
 			{
@@ -239,6 +232,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			catch (winrt::hresult_error const& ex)
 			{
 				TaskDialog(hWnd, g_hInst, L"Error", L"DevicePicker.Show failed", ex.message().c_str(), TDCBF_OK_BUTTON, TD_ERROR_ICON, nullptr);
+			}
+			catch (...)
+			{
+				TaskDialog(hWnd, g_hInst, L"Error", L"DevicePicker.Show threw unknown exception", nullptr, TDCBF_OK_BUTTON, TD_ERROR_ICON, nullptr);
 			}
 			ShowWindow(hWnd, SW_HIDE);
 		}
