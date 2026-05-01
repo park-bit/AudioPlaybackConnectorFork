@@ -135,7 +135,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	SetupVolumeFlyout();
 	SetupMenu();
 	SetupDevicePicker();
-	SetupSvgIcon();
 
 	g_nid.hWnd = g_niid.hWnd = g_hWnd;
 	wcscpy_s(g_nid.szTip, _(L"AudioPlaybackConnector"));
@@ -387,7 +386,10 @@ void SetupMenu()
 			static_cast<float>(pt.x * USER_DEFAULT_SCREEN_DPI / dpi),
 			static_cast<float>(pt.y * USER_DEFAULT_SCREEN_DPI / dpi)
 		};
-		g_volumeFlyout.ShowAt(g_xamlCanvas, point);
+		using namespace winrt::Windows::UI::Xaml::Controls::Primitives;
+		FlyoutShowOptions options;
+		options.Position(point);
+		g_volumeFlyout.ShowAt(g_xamlCanvas, options);
 	});
 
 	FontIcon closeIcon;
@@ -411,7 +413,10 @@ void SetupMenu()
 			static_cast<float>(pt.y * USER_DEFAULT_SCREEN_DPI / dpi)
 		};
 
-		g_xamlFlyout.ShowAt(g_xamlCanvas, point);
+		using namespace winrt::Windows::UI::Xaml::Controls::Primitives;
+		FlyoutShowOptions options;
+		options.Position(point);
+		g_xamlFlyout.ShowAt(g_xamlCanvas, options);
 	});
 
 	MenuFlyout menu;
