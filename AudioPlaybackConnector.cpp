@@ -193,6 +193,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_NOTIFYICON:
 		switch (LOWORD(lParam))
 		{
+		case WM_LBUTTONUP:
 		case NIN_SELECT:
 		case NIN_KEYSELECT:
 		{
@@ -202,8 +203,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
 			if (FAILED(hr))
 			{
-				LOG_HR(hr);
-				break;
+				// Fallback to cursor position if rect fails
+				POINT pt;
+				GetCursorPos(&pt);
+				iconRect = { pt.x - 8, pt.y - 8, pt.x + 8, pt.y + 8 };
 			}
 
 			auto dpi = GetDpiForWindow(hWnd);
@@ -580,16 +583,10 @@ void UpdateNotifyIcon()
 	LOG_IF_WIN32_ERROR(RegGetValueW(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\CurrentVersion\Themes\Personalize)", L"SystemUsesLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &cbValue));
 	g_nid.hIcon = value != 0 ? g_hIconLight : g_hIconDark;
 
-	if (!Shell_NotifyIconW(NIM_MODIFY, &g_nid))
+	Shell_NotifyIconW(NIM_DELETE, &g_nid);
+	if (Shell_NotifyIconW(NIM_ADD, &g_nid))
 	{
-		if (Shell_NotifyIconW(NIM_ADD, &g_nid))
-		{
-			FAIL_FAST_IF_WIN32_BOOL_FALSE(Shell_NotifyIconW(NIM_SETVERSION, &g_nid));
-		}
-		else
-		{
-			LOG_LAST_ERROR();
-		}
+		Shell_NotifyIconW(NIM_SETVERSION, &g_nid);
 	}
 }
 
