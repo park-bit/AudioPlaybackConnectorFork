@@ -1,4 +1,4 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "AudioPlaybackConnector.h"
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -193,9 +193,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_NOTIFYICON:
 		switch (LOWORD(lParam))
 		{
+		case WM_LBUTTONUP:
 		case NIN_SELECT:
 		case NIN_KEYSELECT:
 		{
+			// Debounce: WM_LBUTTONUP and NIN_SELECT can both fire for one click
+			static DWORD s_lastPickerTick = 0;
+			DWORD now = GetTickCount();
+			if (now - s_lastPickerTick < 500) break;
+			s_lastPickerTick = now;
+
 			using namespace winrt::Windows::UI::Popups;
 
 			RECT iconRect;
