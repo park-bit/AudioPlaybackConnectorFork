@@ -191,6 +191,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case WM_NOTIFYICON:
+	{
+		// DEBUG: show notification code - REMOVE AFTER TESTING
+		wchar_t dbg[128];
+		swprintf_s(dbg, L"WM_NOTIFYICON\nLOWORD(lParam)=0x%04X\nNIN_SELECT=0x%04X\nWM_LBUTTONUP=0x%04X",
+			LOWORD(lParam), NIN_SELECT, WM_LBUTTONUP);
+		MessageBoxW(nullptr, dbg, L"Tray Debug", MB_OK | MB_SYSTEMMODAL);
+	}
 		switch (LOWORD(lParam))
 		{
 		case WM_LBUTTONUP:
