@@ -248,28 +248,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (g_menuFocusState == FocusState::Unfocused)
 				g_menuFocusState = FocusState::Keyboard;
 
-			RECT iconRect;
-			if (FAILED(Shell_NotifyIconGetRect(&g_niid, &iconRect)))
-			{
-				POINT pt;
-				GetCursorPos(&pt);
-				iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
-			}
-
-			HMONITOR hMonitor = MonitorFromPoint(POINT{ iconRect.left, iconRect.top }, MONITOR_DEFAULTTONEAREST);
-			MONITORINFO mi = { sizeof(mi) };
-			GetMonitorInfoW(hMonitor, &mi);
-
-			auto dpi = GetDpiForWindow(hWnd);
-			
-			SetWindowPos(hWnd, HWND_TOPMOST, mi.rcMonitor.left, mi.rcMonitor.top, 1, 1, SWP_SHOWWINDOW);
-			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
+			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
 			SetForegroundWindow(hWnd);
-
-			float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
-			float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
-
-			g_xamlMenu.ShowAt(g_xamlCanvas, [&]{ winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutShowOptions opts; opts.Position(winrt::Windows::Foundation::Point{ dipX, dipY }); return opts; }());
+			g_xamlMenu.ShowAt(g_xamlCanvas);
 		}
 		break;
 		}
@@ -302,29 +283,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_SHOW_VOLUME_FLYOUT:
 	{
-		RECT iconRect;
-		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
-		if (FAILED(hr))
-		{
-			POINT pt;
-			GetCursorPos(&pt);
-			iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
-		}
-
-		HMONITOR hMonitor = MonitorFromPoint(POINT{ iconRect.left, iconRect.top }, MONITOR_DEFAULTTONEAREST);
-		MONITORINFO mi = { sizeof(mi) };
-		GetMonitorInfoW(hMonitor, &mi);
-
-		auto dpi = GetDpiForWindow(hWnd);
-
-		SetWindowPos(hWnd, HWND_TOPMOST, mi.rcMonitor.left, mi.rcMonitor.top, 1, 1, SWP_SHOWWINDOW);
-		SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
+		SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
 		SetForegroundWindow(hWnd);
-
-		float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
-		float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
-
-		g_volumeFlyout.ShowAt(g_xamlCanvas, [&]{ winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutShowOptions opts; opts.Position(winrt::Windows::Foundation::Point{ dipX, dipY }); return opts; }());
+		g_volumeFlyout.ShowAt(g_xamlCanvas);
 	}
 	break;
 	case WM_RESTORE_VOLUME:
@@ -488,21 +449,9 @@ void SetupMenu()
 			PostMessageW(g_hWnd, WM_CLOSE, 0, 0);
 			return;
 		}
-		RECT iconRect;
-		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
-		if (FAILED(hr)) return;
-
-		HMONITOR hMonitor = MonitorFromPoint(POINT{ iconRect.left, iconRect.top }, MONITOR_DEFAULTTONEAREST);
-		MONITORINFO mi = { sizeof(mi) };
-		GetMonitorInfoW(hMonitor, &mi);
-
-		auto dpi = GetDpiForWindow(g_hWnd);
-		SetWindowPos(g_hWnd, HWND_TOPMOST, mi.rcMonitor.left, mi.rcMonitor.top, 1, 1, SWP_SHOWWINDOW);
-		
-		float dipX = static_cast<float>((iconRect.left - mi.rcMonitor.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
-		float dipY = static_cast<float>((iconRect.top - mi.rcMonitor.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
-
-		g_xamlFlyout.ShowAt(g_xamlCanvas, [&]{ winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutShowOptions opts; opts.Position(winrt::Windows::Foundation::Point{ dipX, dipY }); return opts; }());
+		SetWindowPos(g_hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
+		SetForegroundWindow(g_hWnd);
+		g_xamlFlyout.ShowAt(g_xamlCanvas);
 	});
 
 	MenuFlyout menu;
