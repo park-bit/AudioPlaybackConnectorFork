@@ -406,7 +406,15 @@ void SetupMenu()
 	MenuFlyoutItem helpItem;
 	helpItem.Text(_(L"Instructions & Tips"));
 	helpItem.Click([](const auto&, const auto&) {
-		TaskDialog(g_hWnd, NULL, L"Instructions", L"ΓÇó Left-Click tray icon to Connect Phone.\nΓÇó Right-Click for Settings & Volume.\nΓÇó Use 'Lock' if phone buttons change PC volume.\nΓÇó 'Fix Volume Sync' requires Admin + Reboot.", L"If sound is missing, disconnect and reconnect on the phone.", TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
+		TaskDialog(g_hWnd, NULL, L"Instructions", 
+			L"- Left-Click tray icon to Connect Phone.\n"
+			L"- Right-Click for Settings & Volume.\n"
+			L"- Use 'Lock' if phone buttons change PC volume.\n"
+			L"- 'Fix Volume Sync' requires Admin + Reboot.", 
+			L"Tips:\n"
+			L"1. If sound is missing, disconnect and reconnect on the phone.\n"
+			L"2. If clicks aren't working, restart 'Windows Explorer' in Task Manager.", 
+			TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
 	});
 
 	MenuFlyoutSubItem fixMenu;
