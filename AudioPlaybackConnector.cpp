@@ -221,9 +221,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi)
 			};
 
-			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
+			// Show the window (transparent, so invisible) - DevicePicker needs a visible parent window
+			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
-			g_devicePicker.Show(rect, Placement::Above);
+			try
+			{
+				g_devicePicker.Show(rect, Placement::Above);
+			}
+			catch (winrt::hresult_error const& ex)
+			{
+				TaskDialog(hWnd, g_hInst, L"Error", L"DevicePicker.Show failed", ex.message().c_str(), TDCBF_OK_BUTTON, TD_ERROR_ICON, nullptr);
+			}
+			ShowWindow(hWnd, SW_HIDE);
 		}
 		break;
 		case WM_RBUTTONUP: // Menu activated by mouse click
