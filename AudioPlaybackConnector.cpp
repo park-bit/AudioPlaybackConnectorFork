@@ -115,11 +115,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 	RegisterClassExW(&wcex);
 
-	// Using 1x1 SHOWN transparent window - most stable for hosting WinRT Flyouts/Pickers
-	g_hWnd = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TOPMOST, L"AudioPlaybackConnector", nullptr, WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, hInstance, nullptr);
+	// When parent window size is 0x0 or invisible, the dpi scale of menu is incorrect. Here we set window size to 1x1 and use WS_EX_LAYERED to make window looks like invisible.
+	g_hWnd = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TOPMOST, L"AudioPlaybackConnector", nullptr, WS_POPUP, 0, 0, 0, 0, nullptr, nullptr, hInstance, nullptr);
 	FAIL_FAST_LAST_ERROR_IF_NULL(g_hWnd);
 	FAIL_FAST_IF_WIN32_BOOL_FALSE(SetLayeredWindowAttributes(g_hWnd, 0, 0, LWA_ALPHA));
-	ShowWindow(g_hWnd, SW_SHOW);
 
 	DesktopWindowXamlSource desktopSource;
 	auto desktopSourceNative2 = desktopSource.as<IDesktopWindowXamlSourceNative2>();
@@ -135,6 +134,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	SetupVolumeFlyout();
 	SetupMenu();
 	SetupDevicePicker();
+	SetupSvgIcon();
 
 	g_nid.hWnd = g_niid.hWnd = g_hWnd;
 	wcscpy_s(g_nid.szTip, _(L"AudioPlaybackConnector"));
@@ -191,26 +191,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case WM_NOTIFYICON:
-	{
-		UINT uMsg = LOWORD(lParam);
-		switch (uMsg)
+		switch (LOWORD(lParam))
 		{
-		case WM_LBUTTONUP:
 		case NIN_SELECT:
 		case NIN_KEYSELECT:
 		{
-			static DWORD s_lastTick = 0;
-			if (GetTickCount() - s_lastTick < 500) break;
-			s_lastTick = GetTickCount();
-
 			using namespace winrt::Windows::UI::Popups;
 
 			RECT iconRect;
-			if (FAILED(Shell_NotifyIconGetRect(&g_niid, &iconRect)))
+			auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
+			if (FAILED(hr))
 			{
-				POINT pt;
-				GetCursorPos(&pt);
-				iconRect = { pt.x - 8, pt.y - 8, pt.x + 8, pt.y + 8 };
+				LOG_HR(hr);
+				break;
 			}
 
 			auto dpi = GetDpiForWindow(hWnd);
@@ -221,43 +214,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi)
 			};
 
+			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
 			SetForegroundWindow(hWnd);
-			try {
-				g_devicePicker.Show(rect, Placement::Above);
-			} catch (...) {
-				LOG_CAUGHT_EXCEPTION();
-			}
+			g_devicePicker.Show(rect, Placement::Above);
 		}
 		break;
-		case WM_RBUTTONUP:
+		case WM_RBUTTONUP: // Menu activated by mouse click
+			g_menuFocusState = FocusState::Pointer;
+			break;
 		case WM_CONTEXTMENU:
 		{
-			static DWORD s_lastTick = 0;
-			if (GetTickCount() - s_lastTick < 500) break;
-			s_lastTick = GetTickCount();
-
-			POINT pt;
-			if (uMsg == WM_CONTEXTMENU && LOWORD(lParam) == WM_CONTEXTMENU) {
-				// VERSION_4 sends coordinates in wParam for WM_CONTEXTMENU
-				pt.x = GET_X_LPARAM(wParam);
-				pt.y = GET_Y_LPARAM(wParam);
-			} else {
-				GetCursorPos(&pt);
-			}
+			if (g_menuFocusState == FocusState::Unfocused)
+				g_menuFocusState = FocusState::Keyboard;
 
 			auto dpi = GetDpiForWindow(hWnd);
 			Point point = {
-				static_cast<float>(pt.x * USER_DEFAULT_SCREEN_DPI / dpi),
-				static_cast<float>(pt.y * USER_DEFAULT_SCREEN_DPI / dpi)
+				static_cast<float>(GET_X_LPARAM(wParam) * USER_DEFAULT_SCREEN_DPI / dpi),
+				static_cast<float>(GET_Y_LPARAM(wParam) * USER_DEFAULT_SCREEN_DPI / dpi)
 			};
 
+			SetWindowPos(g_hWndXaml, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_SHOWWINDOW);
+			SetWindowPos(g_hWnd, HWND_TOPMOST, 0, 0, 1, 1, SWP_SHOWWINDOW);
 			SetForegroundWindow(hWnd);
+
 			g_xamlMenu.ShowAt(g_xamlCanvas, point);
 		}
 		break;
 		}
-	}
-	break;
+		break;
 	case WM_CONNECTDEVICE:
 		if (g_reconnect)
 		{
@@ -341,6 +325,7 @@ void SetupVolumeFlyout()
 	flyout.ShouldConstrainToRootBounds(false);
 	flyout.Content(stackPanel);
 	flyout.Closed([](const auto&, const auto&) {
+		ShowWindow(g_hWnd, SW_HIDE);
 		SaveSettings();
 	});
 
@@ -379,17 +364,21 @@ void SetupMenu()
 	volumeItem.Text(_(L"Volume Control"));
 	volumeItem.Icon(volumeIcon);
 	volumeItem.Click([](const auto&, const auto&) {
-		POINT pt;
-		GetCursorPos(&pt);
+		RECT iconRect;
+		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
+		if (FAILED(hr))
+		{
+			LOG_HR(hr);
+			return;
+		}
+
 		auto dpi = GetDpiForWindow(g_hWnd);
-		Point point = {
-			static_cast<float>(pt.x * USER_DEFAULT_SCREEN_DPI / dpi),
-			static_cast<float>(pt.y * USER_DEFAULT_SCREEN_DPI / dpi)
-		};
-		using namespace winrt::Windows::UI::Xaml::Controls::Primitives;
-		FlyoutShowOptions options;
-		options.Position(point);
-		g_volumeFlyout.ShowAt(g_xamlCanvas, options);
+
+		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 0, 0, SWP_HIDEWINDOW);
+		g_xamlCanvas.Width(static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI / dpi));
+		g_xamlCanvas.Height(static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi));
+
+		g_volumeFlyout.ShowAt(g_xamlCanvas);
 	});
 
 	FontIcon closeIcon;
@@ -405,18 +394,21 @@ void SetupMenu()
 			return;
 		}
 
-		POINT pt;
-		GetCursorPos(&pt);
-		auto dpi = GetDpiForWindow(g_hWnd);
-		Point point = {
-			static_cast<float>(pt.x * USER_DEFAULT_SCREEN_DPI / dpi),
-			static_cast<float>(pt.y * USER_DEFAULT_SCREEN_DPI / dpi)
-		};
+		RECT iconRect;
+		auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
+		if (FAILED(hr))
+		{
+			LOG_HR(hr);
+			return;
+		}
 
-		using namespace winrt::Windows::UI::Xaml::Controls::Primitives;
-		FlyoutShowOptions options;
-		options.Position(point);
-		g_xamlFlyout.ShowAt(g_xamlCanvas, options);
+		auto dpi = GetDpiForWindow(g_hWnd);
+
+		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 0, 0, SWP_HIDEWINDOW);
+		g_xamlCanvas.Width(static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI / dpi));
+		g_xamlCanvas.Height(static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi));
+
+		g_xamlFlyout.ShowAt(g_xamlCanvas);
 	});
 
 	MenuFlyout menu;
@@ -429,8 +421,12 @@ void SetupMenu()
 		auto itemsCount = menuItems.Size();
 		if (itemsCount > 0)
 		{
-			menuItems.GetAt(itemsCount - 1).Focus(FocusState::Pointer);
+			menuItems.GetAt(itemsCount - 1).Focus(g_menuFocusState);
 		}
+		g_menuFocusState = FocusState::Unfocused;
+	});
+	menu.Closed([](const auto&, const auto&) {
+		ShowWindow(g_hWnd, SW_HIDE);
 	});
 
 	g_xamlMenu = menu;
@@ -539,6 +535,9 @@ void SetupDevicePicker()
 	winrt::check_hresult(g_devicePicker.as<IInitializeWithWindow>()->Initialize(g_hWnd));
 
 	g_devicePicker.Filter().SupportedDeviceSelectors().Append(AudioPlaybackConnection::GetDeviceSelector());
+	g_devicePicker.DevicePickerDismissed([](const auto&, const auto&) {
+		SetWindowPos(g_hWnd, nullptr, 0, 0, 0, 0, SWP_NOZORDER | SWP_HIDEWINDOW);
+	});
 	g_devicePicker.DeviceSelected([](const auto& sender, const auto& args) {
 		ConnectDevice(sender, args.SelectedDevice());
 	});
@@ -581,10 +580,16 @@ void UpdateNotifyIcon()
 	LOG_IF_WIN32_ERROR(RegGetValueW(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\CurrentVersion\Themes\Personalize)", L"SystemUsesLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &cbValue));
 	g_nid.hIcon = value != 0 ? g_hIconLight : g_hIconDark;
 
-	Shell_NotifyIconW(NIM_DELETE, &g_nid);
-	if (Shell_NotifyIconW(NIM_ADD, &g_nid))
+	if (!Shell_NotifyIconW(NIM_MODIFY, &g_nid))
 	{
-		Shell_NotifyIconW(NIM_SETVERSION, &g_nid);
+		if (Shell_NotifyIconW(NIM_ADD, &g_nid))
+		{
+			FAIL_FAST_IF_WIN32_BOOL_FALSE(Shell_NotifyIconW(NIM_SETVERSION, &g_nid));
+		}
+		else
+		{
+			LOG_LAST_ERROR();
+		}
 	}
 }
 
@@ -758,13 +763,13 @@ void SetupEndpointVolume()
 		winrt::check_hresult(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device));
 		enumerator->Release();
 
-		// Register AVRCP guardian (blocks phone buttons)
+		// Register AVRCP guardian (blocks phone buttons from changing master volume)
 		IAudioEndpointVolume* epVol = nullptr;
 		winrt::check_hresult(device->Activate(__uuidof(IAudioEndpointVolume),
 			CLSCTX_INPROC_SERVER, NULL, (void**)&epVol));
 		g_endpointVolume = epVol;
 
-		// Initialize our Authority levels
+		// Initialize our Authority levels from the current system state
 		float currentVol = 0.5f;
 		BOOL currentMute = FALSE;
 		if (SUCCEEDED(g_endpointVolume->GetMasterVolumeLevelScalar(&currentVol))) g_lastMasterVolume = currentVol;
@@ -773,14 +778,15 @@ void SetupEndpointVolume()
 		g_volumeCallback = new VolumeCallback();
 		g_endpointVolume->RegisterControlChangeNotify(g_volumeCallback);
 
-		// Register session notifier
+		// Register session notifier so we catch AudioPlaybackConnection sessions the moment they start
 		IAudioSessionManager2* mgr = nullptr;
 		if (SUCCEEDED(device->Activate(__uuidof(IAudioSessionManager2),
 			CLSCTX_INPROC_SERVER, NULL, (void**)&mgr)))
 		{
-			g_sessionManager = mgr;
+			g_sessionManager = mgr; // keep alive for UpdateVolume
 			g_sessionNotifier = new SessionNotifier();
 			mgr->RegisterSessionNotification(g_sessionNotifier);
+			// Apply to any sessions already running
 			ApplyVolumeToOurSessions(mgr);
 		}
 		device->Release();
@@ -793,31 +799,90 @@ void SetupEndpointVolume()
 
 void TeardownEndpointVolume()
 {
-	if (g_endpointVolume)
+	if (g_sessionManager && g_sessionNotifier)
 	{
-		if (g_volumeCallback)
-		{
-			g_endpointVolume->UnregisterControlChangeNotify(g_volumeCallback);
-			g_volumeCallback->Release();
-			g_volumeCallback = nullptr;
-		}
-		g_endpointVolume->Release();
-		g_endpointVolume = nullptr;
-	}
-	if (g_sessionManager)
-	{
-		if (g_sessionNotifier)
-		{
-			g_sessionManager->UnregisterSessionNotification(g_sessionNotifier);
-			g_sessionNotifier->Release();
-			g_sessionNotifier = nullptr;
-		}
+		g_sessionManager->UnregisterSessionNotification(g_sessionNotifier);
+		g_sessionNotifier->Release();
+		g_sessionNotifier = nullptr;
 		g_sessionManager->Release();
 		g_sessionManager = nullptr;
+	}
+	if (g_endpointVolume && g_volumeCallback)
+	{
+		g_endpointVolume->UnregisterControlChangeNotify(g_volumeCallback);
+		g_volumeCallback->Release();
+		g_volumeCallback = nullptr;
+		g_endpointVolume->Release();
+		g_endpointVolume = nullptr;
 	}
 }
 
 void UpdateVolume()
 {
-	if (g_sessionManager) ApplyVolumeToOurSessions(g_sessionManager);
+	// Set volume on our process's sessions (the AudioPlaybackConnection audio)
+	if (g_sessionManager)
+		ApplyVolumeToOurSessions(g_sessionManager);
+}
+
+static bool IsRunningAsAdmin()
+{
+	BOOL isAdmin = FALSE;
+	HANDLE token = NULL;
+	if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+	{
+		TOKEN_ELEVATION elevation = {};
+		DWORD cbSize = sizeof(elevation);
+		if (GetTokenInformation(token, TokenElevation, &elevation, cbSize, &cbSize))
+			isAdmin = elevation.TokenIsElevated;
+		CloseHandle(token);
+	}
+	return isAdmin != FALSE;
+}
+
+void DisableAbsoluteVolume()
+{
+	// If not admin, relaunch with UAC elevation
+	if (!IsRunningAsAdmin())
+	{
+		wchar_t exePath[MAX_PATH];
+		GetModuleFileNameW(NULL, exePath, MAX_PATH);
+		HINSTANCE result = ShellExecuteW(g_hWnd, L"runas", exePath, L"--fix-absolute-volume", NULL, SW_SHOWNORMAL);
+		if (reinterpret_cast<INT_PTR>(result) <= 32)
+		{
+			TaskDialog(g_hWnd, NULL, _(L"Cancelled"), _(L"Administrator privileges are required to apply the system fix.\nPlease try again and click Yes on the UAC prompt."), NULL, TDCBF_OK_BUTTON, TD_WARNING_ICON, NULL);
+		}
+		return;
+	}
+
+	const wchar_t* paths[] = {
+		L"SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT",
+		L"SYSTEM\\ControlSet001\\Control\\Bluetooth\\Audio\\AVRCP\\CT",
+		L"SYSTEM\\CurrentControlSet\\Services\\HidBth\\Parameters",
+		L"SYSTEM\\CurrentControlSet\\Services\\BthAvrcpTg\\Parameters",
+		L"SOFTWARE\\Microsoft\\Bluetooth\\Audio\\AVRCP\\CT"
+	};
+
+	bool success = false;
+	for (auto path : paths)
+	{
+		HKEY hKey;
+		if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, path, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS)
+		{
+			DWORD val1 = 1;
+			DWORD val0 = 0;
+			RegSetValueExW(hKey, L"DisableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&val1, sizeof(val1));
+			RegSetValueExW(hKey, L"EnableAbsoluteVolume", 0, REG_DWORD, (const BYTE*)&val0, sizeof(val0));
+			RegCloseKey(hKey);
+			success = true;
+		}
+	}
+
+	if (success)
+	{
+		TaskDialog(g_hWnd, NULL, _(L"System Fix Applied DEFINITIVELY"), _(L"All known registry paths for Absolute Volume have been updated.\n\nCRITICAL: You MUST REBOOT your laptop now for this to take effect.\n\nIf volume buttons still sync after reboot, it means your Bluetooth driver is ignoring system settings."), NULL, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, NULL);
+	}
+	else
+	{
+		TaskDialog(g_hWnd, NULL, _(L"Error"), _(L"Failed to write registry values."), NULL, TDCBF_OK_BUTTON, TD_ERROR_ICON, NULL);
+	}
 }

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 constexpr auto CONFIG_NAME = L"AudioPlaybackConnector.json";
 constexpr auto BUFFER_SIZE = 4096;
