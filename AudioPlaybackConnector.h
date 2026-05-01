@@ -38,6 +38,7 @@ NOTIFYICONIDENTIFIER g_niid = {
 };
 UINT WM_TASKBAR_CREATED = 0;
 bool g_reconnect = false;
+bool g_runAtStartup = false;
 std::vector<std::wstring> g_lastDevices;
 double g_volume = 0.2;
 bool g_volumeLock = true;

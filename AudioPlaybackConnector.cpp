@@ -424,7 +424,9 @@ void SetupMenu()
 
 	MenuFlyoutItem exitItem;
 	exitItem.Text(_(L"Exit"));
-	exitItem.Icon(FontIcon{ .Glyph = L"\xE8BB" });
+	FontIcon exitIcon;
+	exitIcon.Glyph(L"\xE8BB");
+	exitItem.Icon(exitIcon);
 	exitItem.Click([](const auto&, const auto&) {
 		if (g_audioPlaybackConnections.size() == 0) { PostMessageW(g_hWnd, WM_CLOSE, 0, 0); return; }
 		POINT pt; GetCursorPos(&pt);
@@ -463,7 +465,7 @@ void SetRunAtStartup(bool enable)
 		{
 			wchar_t path[MAX_PATH];
 			GetModuleFileNameW(NULL, path, MAX_PATH);
-			RegSetValueExW(hKey, L"AudioPlaybackConnector", 0, REG_SZ, (const BYTE*)path, (wcslen(path) + 1) * sizeof(wchar_t));
+			RegSetValueExW(hKey, L"AudioPlaybackConnector", 0, REG_SZ, (const BYTE*)path, static_cast<DWORD>((wcslen(path) + 1) * sizeof(wchar_t)));
 		}
 		else
 		{
