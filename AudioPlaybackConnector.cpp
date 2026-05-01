@@ -215,35 +215,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		case NIN_SELECT:
 		case NIN_KEYSELECT:
 		{
+			using namespace winrt::Windows::UI::Popups;
+
 			RECT iconRect;
 			auto hr = Shell_NotifyIconGetRect(&g_niid, &iconRect);
 			if (FAILED(hr))
 			{
-				POINT pt;
-				GetCursorPos(&pt);
-				iconRect = { pt.x, pt.y, pt.x + 1, pt.y + 1 };
+				LOG_HR(hr);
+				break;
 			}
 
-			// DevicePicker is a WinRT component that needs the host window to define its bounding box.
-			// It works perfectly if the host window covers the virtual screen but is HIDDEN.
-			int vX = GetSystemMetrics(SM_XVIRTUALSCREEN);
-			int vY = GetSystemMetrics(SM_YVIRTUALSCREEN);
-			int vW = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-			int vH = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-
 			auto dpi = GetDpiForWindow(hWnd);
+			Rect rect = {
+				static_cast<float>(iconRect.left * USER_DEFAULT_SCREEN_DPI / dpi),
+				static_cast<float>(iconRect.top * USER_DEFAULT_SCREEN_DPI / dpi),
+				static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI / dpi),
+				static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi)
+			};
 
-			SetWindowPos(hWnd, HWND_TOPMOST, vX, vY, vW, vH, SWP_HIDEWINDOW);
+			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
 			SetForegroundWindow(hWnd);
-
-			// DevicePicker coordinates are relative to the client area of hWnd.
-			float dipX = static_cast<float>((iconRect.left - vX) * USER_DEFAULT_SCREEN_DPI) / dpi;
-			float dipY = static_cast<float>((iconRect.top - vY) * USER_DEFAULT_SCREEN_DPI) / dpi;
-			float dipW = static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI) / dpi;
-			float dipH = static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI) / dpi;
-
-			Rect rect = { dipX, dipY, dipW, dipH };
-			g_devicePicker.Show(rect, winrt::Windows::UI::Popups::Placement::Above);
+			g_devicePicker.Show(rect, Placement::Above);
 		}
 		break;
 		case WM_RBUTTONUP:
