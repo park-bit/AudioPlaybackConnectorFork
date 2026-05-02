@@ -11,8 +11,6 @@ Bluetooth audio playback (A2DP Sink) connector for Windows 10 2004+.
 *   **System Fixes:** Built-in menu to apply/revert the registry fix for Absolute Volume sync.
 *   **Tray Integration:** Robust left-click to connect and right-click for full settings.
 
-> **Note:** This fork has been updated and polished using **vibecode** to ensure a stable, feature-rich experience.
-
 # Preview
 ![Preview](https://cdn.jsdelivr.net/gh/ysc3839/AudioPlaybackConnector@master/AudioPlaybackConnector.gif)
 
