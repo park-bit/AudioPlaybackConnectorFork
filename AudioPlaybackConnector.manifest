@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity
-    version="2.0.5.0"
+    version="1.0.0.0"
     processorArchitecture="*"
-    name="com.parkbit.audioplaybackconnector"
+    name="com.ysc3839.audioplaybackconnector"
     type="win32"
   />
-  <description>AudioPlaybackConnector - Connect mobile audio to PC</description>
+  <description>AudioPlaybackConnector</description>
   <dependency>
     <dependentAssembly>
       <assemblyIdentity

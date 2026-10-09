@@ -48,6 +48,7 @@ float g_lastMasterVolume = 0.5f;
 bool g_lastMute = false;
 // true when HKLM ...\AVRCP\CT\DisableAbsoluteVolume == 1 (phone buttons then never touch PC volume)
 bool g_absVolDisabled = false;
+bool g_volumeFixPrompted = false;
 // coalesces restore requests so a held phone button does not flood the message queue
 std::atomic<bool> g_restorePending{ false };
 IAudioEndpointVolume* g_endpointVolume = nullptr;

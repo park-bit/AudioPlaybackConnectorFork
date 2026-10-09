@@ -1,28 +1,24 @@
-# AudioPlaybackConnector (Enhanced Fork)
+# AudioPlaybackConnector
 **English** | [简体中文](https://github.com/ysc3839/AudioPlaybackConnector/blob/master/README.zh_CN.md)
 
-Bluetooth audio playback (A2DP Sink) connector for Windows 10 2004+.
+Bluetooth audio playback (A2DP Sink) connector for Windows 10 2004+ and Windows 11.
 
-### ✨ New Features in this Fork:
-*   **Mobile Volume Control:** Adjust the incoming Bluetooth audio volume independently from your system volume via a dedicated slider.
-*   **Lock Phone Volume Buttons:** Block your phone's volume buttons from altering your PC's master volume (fixes "Absolute Volume" sync issues).
-*   **Run at Startup:** Seamlessly start the app with Windows (runs as a normal user, no admin prompt required).
-*   **Persistent Connections:** Automatically reconnect to your last used device on startup.
-*   **System Fixes:** Built-in menu to apply/revert the registry fix for Absolute Volume sync.
-*   **Tray Integration:** Robust left-click to connect and right-click for full settings.
+Microsoft added Bluetooth A2DP Sink to Windows 10 2004. However, a third-party app is required to manage connections.
+This app provides a lightweight, modern, and open-source system tray utility for connecting and controlling incoming Bluetooth audio.
 
-> **Note:** This fork has been updated and polished using **vibecode** to ensure a stable, feature-rich experience.
+### Features
+* **Tray Integration:** Left-click to quickly connect or disconnect paired Bluetooth devices.
+* **Independent Bluetooth Volume:** Dedicated volume slider for incoming phone audio without affecting PC system volume.
+* **Lock Phone Volume Buttons:** Prevent phone volume rocker buttons from altering PC master volume.
+* **Automatic Absolute Volume Decoupling:** Optionally disable Windows AVRCP Absolute Volume on first setup (with option to revert anytime).
+* **Startup & Auto-Reconnect:** Option to run at Windows startup and automatically reconnect to the last used device.
 
 # Preview
 ![Preview](https://cdn.jsdelivr.net/gh/ysc3839/AudioPlaybackConnector@master/AudioPlaybackConnector.gif)
 
 # Usage
-*   Download and run AudioPlaybackConnector from [releases](https://github.com/park-bit/AudioPlaybackConnectorFork/releases).
-*   Add a bluetooth device in system bluetooth settings. You can right click the tray icon and select "Bluetooth Settings".
-*   **Left-Click** the icon to quickly connect or disconnect a device.
-*   **Right-Click** the icon to access Volume Control, Startup settings, and Advanced Fixes.
-*   **Absolute Volume Fix:** If your phone buttons are changing your PC volume, use the "System Fixes" menu, then **REBOOT** your computer.
-
-# Credits
-Original project by [ysc3839](https://github.com/ysc3839/AudioPlaybackConnector).
-Enhanced and maintained by [park-bit](https://github.com/park-bit).
+* Download and run AudioPlaybackConnector from [releases](https://github.com/ysc3839/AudioPlaybackConnector/releases).
+* Pair your Bluetooth device in Windows Bluetooth settings (right-click the tray icon and select "Bluetooth Settings").
+* **Left-click** the tray icon to connect or disconnect your device.
+* **Right-click** the tray icon to adjust Bluetooth volume, configure startup settings, and manage volume options.
+* **Phone Volume Decoupling:** On first launch, the app offers to optimize volume by disabling Absolute Volume (requires Administrator elevation and a PC restart). You can revert this anytime via the tray menu.
