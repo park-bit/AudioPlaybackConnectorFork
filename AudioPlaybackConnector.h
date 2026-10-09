@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "resource.h"
 
 using namespace winrt::Windows::Data::Json;
@@ -44,6 +46,10 @@ double g_volume = 0.2;
 bool g_volumeLock = true;
 float g_lastMasterVolume = 0.5f;
 bool g_lastMute = false;
+// true when HKLM ...\AVRCP\CT\DisableAbsoluteVolume == 1 (phone buttons then never touch PC volume)
+bool g_absVolDisabled = false;
+// coalesces restore requests so a held phone button does not flood the message queue
+std::atomic<bool> g_restorePending{ false };
 IAudioEndpointVolume* g_endpointVolume = nullptr;
 // GUID used to tag our own volume changes so the callback ignores them
 static const GUID g_ourVolumeGuid = { 0x9a4b2d1c, 0x3e5f, 0x4a6b, { 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0xa7, 0xb8, 0xc9 } };

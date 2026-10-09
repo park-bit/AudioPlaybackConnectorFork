@@ -281,7 +281,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case WM_RESTORE_VOLUME:
-		if (g_volumeLock && g_endpointVolume)
+		g_restorePending = false;
+		if (g_volumeLock && !g_absVolDisabled && g_endpointVolume)
 		{
 			g_endpointVolume->SetMasterVolumeLevelScalar(g_lastMasterVolume, &g_ourVolumeGuid);
 			g_endpointVolume->SetMute(g_lastMute, &g_ourVolumeGuid);
@@ -375,7 +376,7 @@ void SetupMenu()
 	lockItem.IsChecked(g_volumeLock);
 	lockItem.Click([](const auto&, const auto&) {
 		g_volumeLock = lockItem.IsChecked();
-		if (g_volumeLock && g_endpointVolume)
+		if (g_volumeLock && !g_absVolDisabled && g_endpointVolume)
 			g_endpointVolume->SetMasterVolumeLevelScalar(g_lastMasterVolume, &g_ourVolumeGuid);
 		SaveSettings();
 	});
@@ -624,9 +625,24 @@ public:
 	HRESULT STDMETHODCALLTYPE OnNotify(PAUDIO_VOLUME_NOTIFICATION_DATA pNotify) override
 	{
 		if (IsEqualGUID(pNotify->guidEventContext, g_ourVolumeGuid)) return S_OK;
-		bool isRemote = !IsEqualGUID(pNotify->guidEventContext, GUID_NULL);
-		if (!isRemote) { LASTINPUTINFO lii = { sizeof(lii) }; if (GetLastInputInfo(&lii) && (GetTickCount() - lii.dwTime) > 1500) isRemote = true; }
-		if (isRemote && g_volumeLock && g_hWnd) { g_volume = pNotify->fMasterVolume; PostMessageW(g_hWnd, WM_RESTORE_VOLUME, 0, 0); }
+		// Absolute Volume off (or lock off): phone buttons never reach the PC endpoint.
+		// Every change seen here is a PC change. Track it, never revert it.
+		if (g_absVolDisabled || !g_volumeLock || !g_hWnd)
+		{
+			g_lastMasterVolume = pNotify->fMasterVolume; g_lastMute = pNotify->bMuted;
+			return S_OK;
+		}
+		// Fallback path (Absolute Volume still on). Guess source by input idle time only.
+		// Old code also treated any non-null context GUID as remote. Windows own volume UI sets one,
+		// so normal PC changes were reverted. That was the glitch.
+		bool isRemote = false;
+		LASTINPUTINFO lii = { sizeof(lii) };
+		if (GetLastInputInfo(&lii) && (GetTickCount() - lii.dwTime) > 1500) isRemote = true;
+		if (isRemote)
+		{
+			g_volume = pNotify->fMasterVolume;
+			if (!g_restorePending.exchange(true)) PostMessageW(g_hWnd, WM_RESTORE_VOLUME, 0, 0);
+		}
 		else { g_lastMasterVolume = pNotify->fMasterVolume; g_lastMute = pNotify->bMuted; }
 		return S_OK;
 	}
@@ -666,6 +682,10 @@ static SessionNotifier* g_sessionNotifier = nullptr;
 
 void SetupEndpointVolume()
 {
+	{
+		DWORD v = 0, cb = sizeof(v);
+		g_absVolDisabled = RegGetValueW(HKEY_LOCAL_MACHINE, LR"(SYSTEM\CurrentControlSet\Control\Bluetooth\Audio\AVRCP\CT)", L"DisableAbsoluteVolume", RRF_RT_REG_DWORD, nullptr, &v, &cb) == ERROR_SUCCESS && v == 1;
+	}
 	try
 	{
 		IMMDeviceEnumerator* enumerator = nullptr;
